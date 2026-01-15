@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateSurface } from '@/lib/graphing/surface3D';
@@ -29,6 +29,28 @@ export default function Graph3D({
   const animationIdRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Calculate ideal camera distance based on range
+  const getIdealCameraDistance = useCallback(() => {
+    const xSpan = Math.abs(xRange[1] - xRange[0]);
+    const ySpan = Math.abs(yRange[1] - yRange[0]);
+    const maxSpan = Math.max(xSpan, ySpan);
+    // Camera should be about 1.5x the span away for a good view
+    return Math.max(maxSpan * 1.5, 10);
+  }, [xRange, yRange]);
+
+  // Reset camera to default view
+  const resetView = useCallback(() => {
+    if (!cameraRef.current || !controlsRef.current) return;
+
+    const distance = getIdealCameraDistance();
+    const angle = distance * 0.7; // 45-degree-ish angle
+
+    cameraRef.current.position.set(angle, angle * 0.8, angle);
+    cameraRef.current.lookAt(0, 0, 0);
+    controlsRef.current.target.set(0, 0, 0);
+    controlsRef.current.update();
+  }, [getIdealCameraDistance]);
+
   // Initialize Three.js scene
   useEffect(() => {
     if (!containerRef.current) return;
@@ -42,8 +64,8 @@ export default function Graph3D({
     scene.background = new THREE.Color(0x1a1a2e);
     sceneRef.current = scene;
 
-    // Camera - slightly lower angle for better view
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+    // Camera - slightly lower angle for better view, large far plane for big ranges
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100000);
     camera.position.set(12, 10, 12);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
@@ -64,8 +86,9 @@ export default function Graph3D({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 5;
-    controls.maxDistance = 50;
+    // No distance limits - user can zoom freely
+    controls.minDistance = 0.1;
+    controls.maxDistance = 10000;
     controls.maxPolarAngle = Math.PI * 0.85;
     controlsRef.current = controls;
 
@@ -150,6 +173,11 @@ export default function Graph3D({
       rendererRef.current?.dispose();
     };
   }, []);
+
+  // Auto-reset view when ranges change significantly
+  useEffect(() => {
+    resetView();
+  }, [xRange, yRange, resetView]);
 
   // Update surfaces when expressions or ranges change
   useEffect(() => {
@@ -250,8 +278,19 @@ export default function Graph3D({
           {error}
         </div>
       )}
-      <div className="absolute bottom-4 left-4 text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
-        Drag to rotate &bull; Scroll to zoom
+      <div className="absolute bottom-4 left-4 flex items-center gap-2">
+        <button
+          onClick={resetView}
+          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Reset View
+        </button>
+        <span className="text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+          Drag to rotate &bull; Scroll to zoom
+        </span>
       </div>
     </div>
   );

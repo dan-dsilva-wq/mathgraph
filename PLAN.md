@@ -76,7 +76,9 @@ mathgraph/
 ### Visual Improvements
 - [ ] Add axis labels (X, Y, Z text labels)
 - [ ] Add grid lines on the surface (optional toggle)
-- [ ] Add "reset view" button to restore default camera position
+- [x] Add "reset view" button to restore default camera position
+- [x] Removed zoom limits - can zoom freely in/out
+- [x] Auto-reset camera when ranges change
 - [ ] Mobile touch controls optimization
 - [ ] Loading skeleton while Three.js initializes
 
@@ -177,6 +179,12 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2024-01-15 (Update 2)
+- **Unlimited zoom** - removed zoom limits so users can zoom out/in freely
+- **Reset View button** - quickly restore default camera position
+- **Auto-reset on range change** - camera automatically adjusts when x/y ranges change
+- Increased camera far plane to 100000 for very large ranges
 
 ### 2024-01-15
 - **Multi-function graphing** - plot up to 6 functions simultaneously
