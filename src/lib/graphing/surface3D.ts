@@ -24,6 +24,7 @@ interface SurfaceResult {
   zMax: number;
   criticalPoints: CriticalPoint[];
   surfaceArea: number;
+  zeroPlaneY: number; // Where z=0 is in Three.js Y coordinates
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
@@ -199,5 +200,8 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     }
   }
 
-  return { geometry, zMin, zMax, criticalPoints, surfaceArea };
+  // Calculate where z=0 is in Three.js Y coordinates
+  const zeroPlaneY = (0 - zOffset) * zScale;
+
+  return { geometry, zMin, zMax, criticalPoints, surfaceArea, zeroPlaneY };
 }

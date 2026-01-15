@@ -34,6 +34,7 @@ export default function Graph3D({
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; z: number; screenX: number; screenY: number } | null>(null);
   const [criticalPoints, setCriticalPoints] = useState<CriticalPoint[]>([]);
   const [surfaceArea, setSurfaceArea] = useState<number>(0);
+  const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
 
   // Calculate ideal camera distance based on range
@@ -252,9 +253,9 @@ export default function Graph3D({
     const gridSize = maxSpan * 2;
     const gridDivisions = 20;
 
-    // Grid on the floor (at y=0 level, which is the center of the graph)
+    // Grid at z=0 level (positioned using zeroPlaneY from surface generation)
     const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444466, 0x333355);
-    gridHelper.position.y = 0;
+    gridHelper.position.y = zeroPlaneY;
     helpersGroup.add(gridHelper);
 
     // Arrow head size proportional to axis
@@ -355,7 +356,7 @@ export default function Graph3D({
 
     sceneRef.current.add(helpersGroup);
     helpersGroupRef.current = helpersGroup;
-  }, [xRange, yRange]);
+  }, [xRange, yRange, zeroPlaneY]);
 
   // Update surfaces when expressions or ranges change
   useEffect(() => {
@@ -417,7 +418,7 @@ export default function Graph3D({
       // Generate surface for each expression
       validExpressions.forEach((expression, index) => {
         try {
-          const { geometry, zMin, zMax, criticalPoints: points, surfaceArea: area } = generateSurface({
+          const { geometry, zMin, zMax, criticalPoints: points, surfaceArea: area, zeroPlaneY: zPlane } = generateSurface({
             expression,
             xRange,
             yRange,
@@ -429,6 +430,11 @@ export default function Graph3D({
           globalZMax = Math.max(globalZMax, zMax);
           allCriticalPoints = [...allCriticalPoints, ...points];
           totalSurfaceArea += area;
+
+          // Use the first function's zero plane for grid positioning
+          if (index === 0) {
+            setZeroPlaneY(zPlane);
+          }
 
           // Main surface with improved material
           const surfaceMaterial = new THREE.MeshStandardMaterial({
