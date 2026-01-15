@@ -391,6 +391,10 @@ export default function Graph3D({
             obj.material.dispose();
           }
         }
+        if (obj instanceof THREE.Sprite) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
       });
       criticalPointsGroupRef.current = null;
     }
@@ -459,19 +463,56 @@ export default function Graph3D({
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
-      // Add critical points markers
+      // Add critical points markers with labels
       const xSpan = Math.abs(xRange[1] - xRange[0]);
       const ySpan = Math.abs(yRange[1] - yRange[0]);
-      const markerSize = Math.max(xSpan, ySpan) * 0.03;
+      const maxSpan = Math.max(xSpan, ySpan);
+      const markerSize = maxSpan * 0.025;
+
+      // Helper to create coordinate label
+      const createCoordLabel = (point: CriticalPoint): THREE.Sprite => {
+        const canvas = document.createElement('canvas');
+        const size = 256;
+        canvas.width = size;
+        canvas.height = size / 2;
+        const ctx = canvas.getContext('2d')!;
+
+        ctx.fillStyle = point.type === 'maximum' ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 50, 50, 0.9)';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, size, size / 2, 8);
+        ctx.fill();
+
+        ctx.font = 'bold 24px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'white';
+        const label = point.type === 'maximum' ? 'MAX' : 'MIN';
+        ctx.fillText(label, size / 2, size / 6);
+
+        ctx.font = '18px monospace';
+        ctx.fillText(`(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`, size / 2, size / 3 + 10);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+        const sprite = new THREE.Sprite(material);
+        return sprite;
+      };
 
       allCriticalPoints.forEach((point) => {
+        // Sphere marker
         const sphereGeom = new THREE.SphereGeometry(markerSize, 16, 16);
-        const color = point.type === 'maximum' ? 0x00ff00 : 0xff0000; // Green for max, red for min
+        const color = point.type === 'maximum' ? 0x00cc00 : 0xff3333;
         const sphereMat = new THREE.MeshBasicMaterial({ color });
         const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-        // Position: x stays x, scaledZ goes to y (Three.js), y stays z (Three.js)
         sphere.position.set(point.x, point.scaledZ, point.y);
         criticalPointsGroup.add(sphere);
+
+        // Coordinate label above the sphere
+        const label = createCoordLabel(point);
+        const labelScale = maxSpan * 0.12;
+        label.scale.set(labelScale, labelScale / 2, 1);
+        label.position.set(point.x, point.scaledZ + markerSize * 3, point.y);
+        criticalPointsGroup.add(label);
       });
 
       sceneRef.current.add(criticalPointsGroup);
@@ -512,37 +553,24 @@ export default function Graph3D({
         </div>
       )}
       {/* Stats Panel */}
-      <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/10 max-w-48">
+      <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/10">
         <div className="text-gray-400 text-[10px] mb-2 uppercase tracking-wide">Analysis</div>
-        <div className="mb-2">
-          <span className="text-gray-400">Surface Area:</span>{' '}
-          <span className="text-white">{surfaceArea.toFixed(2)}</span>
-        </div>
-        {criticalPoints.length > 0 && (
+        <div className="space-y-2">
           <div>
-            <div className="text-gray-400 mb-1">Critical Points:</div>
-            <div className="max-h-32 overflow-y-auto space-y-1">
-              {criticalPoints.slice(0, 10).map((point, i) => (
-                <div key={i} className="flex items-center gap-1">
-                  <span className={point.type === 'maximum' ? 'text-green-400' : 'text-red-400'}>
-                    {point.type === 'maximum' ? '▲' : '▼'}
-                  </span>
-                  <span className="text-gray-300 text-[10px]">
-                    ({point.x.toFixed(2)}, {point.y.toFixed(2)}, {point.z.toFixed(2)})
-                  </span>
-                </div>
-              ))}
-              {criticalPoints.length > 10 && (
-                <div className="text-gray-500 text-[10px]">
-                  +{criticalPoints.length - 10} more...
-                </div>
-              )}
-            </div>
+            <span className="text-gray-400">Surface Area:</span>{' '}
+            <span className="text-white">{surfaceArea.toFixed(2)} units²</span>
           </div>
-        )}
-        {criticalPoints.length === 0 && (
-          <div className="text-gray-500 text-[10px]">No critical points found</div>
-        )}
+          {criticalPoints.map((point, i) => (
+            <div key={i} className={`p-1.5 rounded ${point.type === 'maximum' ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
+              <div className={`font-bold ${point.type === 'maximum' ? 'text-green-400' : 'text-red-400'}`}>
+                {point.type === 'maximum' ? '▲ Global Maximum' : '▼ Global Minimum'}
+              </div>
+              <div className="text-white text-[11px]">
+                ({point.x.toFixed(3)}, {point.y.toFixed(3)}, {point.z.toFixed(3)})
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="absolute bottom-4 left-4 flex items-center gap-2">
         <button

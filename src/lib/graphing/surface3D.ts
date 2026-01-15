@@ -128,41 +128,52 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  // Find critical points (local minima and maxima)
+  // Find global minimum and maximum
   const criticalPoints: CriticalPoint[] = [];
 
-  for (let i = 1; i < resolution; i++) {
-    for (let j = 1; j < resolution; j++) {
+  let globalMinPoint: { i: number; j: number; z: number } | null = null;
+  let globalMaxPoint: { i: number; j: number; z: number } | null = null;
+
+  for (let i = 0; i <= resolution; i++) {
+    for (let j = 0; j <= resolution; j++) {
       const z = zValues[i][j];
       if (z === null) continue;
 
-      // Get all 8 neighbors
-      const neighbors = [
-        zValues[i - 1][j - 1], zValues[i - 1][j], zValues[i - 1][j + 1],
-        zValues[i][j - 1],                         zValues[i][j + 1],
-        zValues[i + 1][j - 1], zValues[i + 1][j], zValues[i + 1][j + 1],
-      ];
-
-      const validNeighbors = neighbors.filter((n): n is number => n !== null);
-      if (validNeighbors.length < 4) continue; // Need enough neighbors
-
-      const allGreater = validNeighbors.every((n) => z >= n);
-      const allLesser = validNeighbors.every((n) => z <= n);
-
-      if (allGreater || allLesser) {
-        const x = xMin + i * xStep;
-        const y = yMin + j * yStep;
-        const scaledZ = (z - zOffset) * zScale;
-
-        criticalPoints.push({
-          x,
-          y,
-          z,
-          scaledZ,
-          type: allGreater ? 'maximum' : 'minimum',
-        });
+      if (globalMinPoint === null || z < globalMinPoint.z) {
+        globalMinPoint = { i, j, z };
+      }
+      if (globalMaxPoint === null || z > globalMaxPoint.z) {
+        globalMaxPoint = { i, j, z };
       }
     }
+  }
+
+  // Add global minimum
+  if (globalMinPoint) {
+    const x = xMin + globalMinPoint.i * xStep;
+    const y = yMin + globalMinPoint.j * yStep;
+    const scaledZ = (globalMinPoint.z - zOffset) * zScale;
+    criticalPoints.push({
+      x,
+      y,
+      z: globalMinPoint.z,
+      scaledZ,
+      type: 'minimum',
+    });
+  }
+
+  // Add global maximum (if different from minimum)
+  if (globalMaxPoint && (!globalMinPoint || globalMaxPoint.z !== globalMinPoint.z)) {
+    const x = xMin + globalMaxPoint.i * xStep;
+    const y = yMin + globalMaxPoint.j * yStep;
+    const scaledZ = (globalMaxPoint.z - zOffset) * zScale;
+    criticalPoints.push({
+      x,
+      y,
+      z: globalMaxPoint.z,
+      scaledZ,
+      type: 'maximum',
+    });
   }
 
   // Calculate surface area by summing triangle areas
