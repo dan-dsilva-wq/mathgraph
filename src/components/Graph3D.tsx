@@ -26,6 +26,7 @@ export default function Graph3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
+  const helpersGroupRef = useRef<THREE.Group | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,80 +110,6 @@ export default function Graph3D({
     backLight.position.set(0, -10, 0);
     scene.add(backLight);
 
-    // Subtle grid on the floor
-    const gridHelper = new THREE.GridHelper(20, 20, 0x444466, 0x333355);
-    gridHelper.position.y = -5;
-    scene.add(gridHelper);
-
-    // Create axis lines with labels
-    const axisLength = 8;
-    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x666688 });
-
-    // X axis (red tint)
-    const xAxisGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-axisLength, 0, 0),
-      new THREE.Vector3(axisLength, 0, 0),
-    ]);
-    const xAxis = new THREE.Line(xAxisGeom, new THREE.LineBasicMaterial({ color: 0xff6666 }));
-    scene.add(xAxis);
-
-    // Y axis (up - green tint)
-    const yAxisGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, -axisLength, 0),
-      new THREE.Vector3(0, axisLength, 0),
-    ]);
-    const yAxis = new THREE.Line(yAxisGeom, new THREE.LineBasicMaterial({ color: 0x66ff66 }));
-    scene.add(yAxis);
-
-    // Z axis (blue tint) - this is Y in math terms
-    const zAxisGeom = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, -axisLength),
-      new THREE.Vector3(0, 0, axisLength),
-    ]);
-    const zAxis = new THREE.Line(zAxisGeom, new THREE.LineBasicMaterial({ color: 0x6666ff }));
-    scene.add(zAxis);
-
-    // Helper function to create text labels
-    const createLabel = (text: string, color: string): THREE.Sprite => {
-      const canvas = document.createElement('canvas');
-      const size = 128;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d')!;
-
-      ctx.fillStyle = 'transparent';
-      ctx.fillRect(0, 0, size, size);
-
-      ctx.font = 'bold 80px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = color;
-      ctx.fillText(text, size / 2, size / 2);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      const material = new THREE.SpriteMaterial({
-        map: texture,
-        transparent: true,
-        depthTest: false
-      });
-      const sprite = new THREE.Sprite(material);
-      sprite.scale.set(1.5, 1.5, 1);
-      return sprite;
-    };
-
-    // Add axis labels
-    const xLabel = createLabel('X', '#ff6666');
-    xLabel.position.set(axisLength + 0.8, 0, 0);
-    scene.add(xLabel);
-
-    const yLabel = createLabel('Z', '#66ff66'); // Math Z is displayed on Y axis
-    yLabel.position.set(0, axisLength + 0.8, 0);
-    scene.add(yLabel);
-
-    const zLabel = createLabel('Y', '#6666ff'); // Math Y is displayed on Z axis
-    zLabel.position.set(0, 0, axisLength + 0.8);
-    scene.add(zLabel);
-
     // Animation loop
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate);
@@ -219,6 +146,115 @@ export default function Graph3D({
   useEffect(() => {
     resetView();
   }, [xRange, yRange, resetView]);
+
+  // Update grid, axes, and labels when ranges change
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    // Remove old helpers group
+    if (helpersGroupRef.current) {
+      sceneRef.current.remove(helpersGroupRef.current);
+      helpersGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Line || obj instanceof THREE.LineSegments) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) {
+            obj.material.dispose();
+          }
+        }
+        if (obj instanceof THREE.Sprite) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
+      });
+    }
+
+    const helpersGroup = new THREE.Group();
+
+    // Calculate size based on ranges
+    const xSpan = Math.abs(xRange[1] - xRange[0]);
+    const ySpan = Math.abs(yRange[1] - yRange[0]);
+    const maxSpan = Math.max(xSpan, ySpan);
+    const axisLength = maxSpan * 0.6;
+    const gridSize = maxSpan;
+    const gridDivisions = 20;
+
+    // Grid on the floor (at y=0 level, which is the center of the graph)
+    const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444466, 0x333355);
+    gridHelper.position.y = 0;
+    helpersGroup.add(gridHelper);
+
+    // X axis (red tint)
+    const xAxisGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-axisLength, 0, 0),
+      new THREE.Vector3(axisLength, 0, 0),
+    ]);
+    const xAxis = new THREE.Line(xAxisGeom, new THREE.LineBasicMaterial({ color: 0xff6666 }));
+    helpersGroup.add(xAxis);
+
+    // Y axis (up - green tint) - this shows Z values
+    const yAxisGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, -axisLength, 0),
+      new THREE.Vector3(0, axisLength, 0),
+    ]);
+    const yAxis = new THREE.Line(yAxisGeom, new THREE.LineBasicMaterial({ color: 0x66ff66 }));
+    helpersGroup.add(yAxis);
+
+    // Z axis (blue tint) - this is Y in math terms
+    const zAxisGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, -axisLength),
+      new THREE.Vector3(0, 0, axisLength),
+    ]);
+    const zAxis = new THREE.Line(zAxisGeom, new THREE.LineBasicMaterial({ color: 0x6666ff }));
+    helpersGroup.add(zAxis);
+
+    // Helper function to create text labels
+    const createLabel = (text: string, color: string): THREE.Sprite => {
+      const canvas = document.createElement('canvas');
+      const size = 128;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.font = 'bold 80px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = color;
+      ctx.fillText(text, size / 2, size / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false
+      });
+      const sprite = new THREE.Sprite(material);
+      // Scale labels based on range
+      const labelScale = maxSpan * 0.08;
+      sprite.scale.set(labelScale, labelScale, 1);
+      return sprite;
+    };
+
+    // Add axis labels
+    const labelOffset = axisLength * 0.15;
+
+    const xLabel = createLabel('X', '#ff6666');
+    xLabel.position.set(axisLength + labelOffset, 0, 0);
+    helpersGroup.add(xLabel);
+
+    const yLabel = createLabel('Z', '#66ff66'); // Math Z is displayed on Y axis
+    yLabel.position.set(0, axisLength + labelOffset, 0);
+    helpersGroup.add(yLabel);
+
+    const zLabel = createLabel('Y', '#6666ff'); // Math Y is displayed on Z axis
+    zLabel.position.set(0, 0, axisLength + labelOffset);
+    helpersGroup.add(zLabel);
+
+    sceneRef.current.add(helpersGroup);
+    helpersGroupRef.current = helpersGroup;
+  }, [xRange, yRange]);
 
   // Update surfaces when expressions or ranges change
   useEffect(() => {
