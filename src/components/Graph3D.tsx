@@ -110,10 +110,22 @@ export default function Graph3D({
     backLight.position.set(0, -10, 0);
     scene.add(backLight);
 
-    // Animation loop
+    // Animation loop - also updates label sizes based on camera distance
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate);
       controls.update();
+
+      // Update label sizes based on camera distance for consistent screen size
+      if (helpersGroupRef.current) {
+        const cameraDistance = camera.position.length();
+        const baseScale = cameraDistance * 0.04; // Scale factor for readable labels
+        helpersGroupRef.current.traverse((obj) => {
+          if (obj instanceof THREE.Sprite) {
+            obj.scale.set(baseScale, baseScale, 1);
+          }
+        });
+      }
+
       renderer.render(scene, camera);
     };
     animate();
