@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { generateSurface } from '@/lib/graphing/surface3D';
+import { generateSurface, CriticalPoint } from '@/lib/graphing/surface3D';
 
 interface Graph3DProps {
   expressions: string[];
@@ -28,7 +28,13 @@ export default function Graph3D({
   const surfaceGroupRef = useRef<THREE.Group | null>(null);
   const helpersGroupRef = useRef<THREE.Group | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const raycasterRef = useRef<THREE.Raycaster | null>(null);
+  const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const [error, setError] = useState<string | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; z: number; screenX: number; screenY: number } | null>(null);
+  const [criticalPoints, setCriticalPoints] = useState<CriticalPoint[]>([]);
+  const [surfaceArea, setSurfaceArea] = useState<number>(0);
+  const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
 
   // Calculate ideal camera distance based on range
   const getIdealCameraDistance = useCallback(() => {
@@ -93,6 +99,10 @@ export default function Graph3D({
     controls.maxPolarAngle = Math.PI * 0.85;
     controlsRef.current = controls;
 
+    // Raycaster for hover detection
+    const raycaster = new THREE.Raycaster();
+    raycasterRef.current = raycaster;
+
     // Improved lighting setup
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
@@ -141,9 +151,55 @@ export default function Graph3D({
     };
     window.addEventListener('resize', handleResize);
 
+    // Handle mouse move for hover detection
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!containerRef.current || !raycasterRef.current || !cameraRef.current || !surfaceGroupRef.current) {
+        return;
+      }
+
+      const rect = containerRef.current.getBoundingClientRect();
+      mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+      // Get all mesh children from surface group
+      const meshes: THREE.Mesh[] = [];
+      surfaceGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          meshes.push(obj);
+        }
+      });
+
+      const intersects = raycasterRef.current.intersectObjects(meshes);
+
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
+        // In Three.js: x = math x, y = math z (height), z = math y
+        setHoverPoint({
+          x: point.x,
+          y: point.z, // Math Y is Three.js Z
+          z: point.y, // Math Z is Three.js Y
+          screenX: event.clientX - rect.left,
+          screenY: event.clientY - rect.top,
+        });
+      } else {
+        setHoverPoint(null);
+      }
+    };
+
+    const handleMouseLeave = () => {
+      setHoverPoint(null);
+    };
+
+    container.addEventListener('mousemove', handleMouseMove);
+    container.addEventListener('mouseleave', handleMouseLeave);
+
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('mousemove', handleMouseMove);
+      container.removeEventListener('mouseleave', handleMouseLeave);
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
@@ -325,6 +381,20 @@ export default function Graph3D({
       surfaceGroupRef.current = null;
     }
 
+    // Remove old critical points markers
+    if (criticalPointsGroupRef.current) {
+      sceneRef.current.remove(criticalPointsGroupRef.current);
+      criticalPointsGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) {
+            obj.material.dispose();
+          }
+        }
+      });
+      criticalPointsGroupRef.current = null;
+    }
+
     // Filter valid expressions
     const validExpressions = expressions.filter(expr => expr.trim());
     if (validExpressions.length === 0) return;
@@ -334,13 +404,16 @@ export default function Graph3D({
 
       // Create a group to hold all surfaces
       const surfaceGroup = new THREE.Group();
+      const criticalPointsGroup = new THREE.Group();
       let globalZMin = Infinity;
       let globalZMax = -Infinity;
+      let allCriticalPoints: CriticalPoint[] = [];
+      let totalSurfaceArea = 0;
 
       // Generate surface for each expression
       validExpressions.forEach((expression, index) => {
         try {
-          const { geometry, zMin, zMax } = generateSurface({
+          const { geometry, zMin, zMax, criticalPoints: points, surfaceArea: area } = generateSurface({
             expression,
             xRange,
             yRange,
@@ -350,6 +423,8 @@ export default function Graph3D({
 
           globalZMin = Math.min(globalZMin, zMin);
           globalZMax = Math.max(globalZMax, zMax);
+          allCriticalPoints = [...allCriticalPoints, ...points];
+          totalSurfaceArea += area;
 
           // Main surface with improved material
           const surfaceMaterial = new THREE.MeshStandardMaterial({
@@ -384,6 +459,28 @@ export default function Graph3D({
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
+      // Add critical points markers
+      const xSpan = Math.abs(xRange[1] - xRange[0]);
+      const ySpan = Math.abs(yRange[1] - yRange[0]);
+      const markerSize = Math.max(xSpan, ySpan) * 0.03;
+
+      allCriticalPoints.forEach((point) => {
+        const sphereGeom = new THREE.SphereGeometry(markerSize, 16, 16);
+        const color = point.type === 'maximum' ? 0x00ff00 : 0xff0000; // Green for max, red for min
+        const sphereMat = new THREE.MeshBasicMaterial({ color });
+        const sphere = new THREE.Mesh(sphereGeom, sphereMat);
+        // Position: x stays x, scaledZ goes to y (Three.js), y stays z (Three.js)
+        sphere.position.set(point.x, point.scaledZ, point.y);
+        criticalPointsGroup.add(sphere);
+      });
+
+      sceneRef.current.add(criticalPointsGroup);
+      criticalPointsGroupRef.current = criticalPointsGroup;
+
+      // Update state
+      setCriticalPoints(allCriticalPoints);
+      setSurfaceArea(totalSurfaceArea);
+
       if (onZRangeChange && isFinite(globalZMin) && isFinite(globalZMax)) {
         onZRangeChange(globalZMin, globalZMax);
       }
@@ -400,6 +497,53 @@ export default function Graph3D({
           {error}
         </div>
       )}
+      {hoverPoint && (
+        <div
+          className="absolute pointer-events-none bg-black/80 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/20"
+          style={{
+            left: hoverPoint.screenX + 15,
+            top: hoverPoint.screenY - 10,
+          }}
+        >
+          <div className="text-gray-400 text-[10px] mb-1">Coordinates</div>
+          <div><span className="text-red-400">x:</span> {hoverPoint.x.toFixed(3)}</div>
+          <div><span className="text-blue-400">y:</span> {hoverPoint.y.toFixed(3)}</div>
+          <div><span className="text-green-400">z:</span> {hoverPoint.z.toFixed(3)}</div>
+        </div>
+      )}
+      {/* Stats Panel */}
+      <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/10 max-w-48">
+        <div className="text-gray-400 text-[10px] mb-2 uppercase tracking-wide">Analysis</div>
+        <div className="mb-2">
+          <span className="text-gray-400">Surface Area:</span>{' '}
+          <span className="text-white">{surfaceArea.toFixed(2)}</span>
+        </div>
+        {criticalPoints.length > 0 && (
+          <div>
+            <div className="text-gray-400 mb-1">Critical Points:</div>
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {criticalPoints.slice(0, 10).map((point, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <span className={point.type === 'maximum' ? 'text-green-400' : 'text-red-400'}>
+                    {point.type === 'maximum' ? '▲' : '▼'}
+                  </span>
+                  <span className="text-gray-300 text-[10px]">
+                    ({point.x.toFixed(2)}, {point.y.toFixed(2)}, {point.z.toFixed(2)})
+                  </span>
+                </div>
+              ))}
+              {criticalPoints.length > 10 && (
+                <div className="text-gray-500 text-[10px]">
+                  +{criticalPoints.length - 10} more...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {criticalPoints.length === 0 && (
+          <div className="text-gray-500 text-[10px]">No critical points found</div>
+        )}
+      </div>
       <div className="absolute bottom-4 left-4 flex items-center gap-2">
         <button
           onClick={resetView}

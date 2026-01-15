@@ -10,10 +10,20 @@ interface SurfaceOptions {
   functionIndex?: number; // For multi-function coloring
 }
 
+export interface CriticalPoint {
+  x: number;
+  y: number;
+  z: number;
+  scaledZ: number; // For 3D positioning
+  type: 'minimum' | 'maximum' | 'saddle';
+}
+
 interface SurfaceResult {
   geometry: THREE.BufferGeometry;
   zMin: number;
   zMax: number;
+  criticalPoints: CriticalPoint[];
+  surfaceArea: number;
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
@@ -118,5 +128,65 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  return { geometry, zMin, zMax };
+  // Find critical points (local minima and maxima)
+  const criticalPoints: CriticalPoint[] = [];
+
+  for (let i = 1; i < resolution; i++) {
+    for (let j = 1; j < resolution; j++) {
+      const z = zValues[i][j];
+      if (z === null) continue;
+
+      // Get all 8 neighbors
+      const neighbors = [
+        zValues[i - 1][j - 1], zValues[i - 1][j], zValues[i - 1][j + 1],
+        zValues[i][j - 1],                         zValues[i][j + 1],
+        zValues[i + 1][j - 1], zValues[i + 1][j], zValues[i + 1][j + 1],
+      ];
+
+      const validNeighbors = neighbors.filter((n): n is number => n !== null);
+      if (validNeighbors.length < 4) continue; // Need enough neighbors
+
+      const allGreater = validNeighbors.every((n) => z >= n);
+      const allLesser = validNeighbors.every((n) => z <= n);
+
+      if (allGreater || allLesser) {
+        const x = xMin + i * xStep;
+        const y = yMin + j * yStep;
+        const scaledZ = (z - zOffset) * zScale;
+
+        criticalPoints.push({
+          x,
+          y,
+          z,
+          scaledZ,
+          type: allGreater ? 'maximum' : 'minimum',
+        });
+      }
+    }
+  }
+
+  // Calculate surface area by summing triangle areas
+  let surfaceArea = 0;
+  const positionArray = geometry.getAttribute('position').array;
+  const indexArray = geometry.getIndex()?.array;
+
+  if (indexArray) {
+    for (let i = 0; i < indexArray.length; i += 3) {
+      const i0 = indexArray[i] * 3;
+      const i1 = indexArray[i + 1] * 3;
+      const i2 = indexArray[i + 2] * 3;
+
+      const v0 = new THREE.Vector3(positionArray[i0], positionArray[i0 + 1], positionArray[i0 + 2]);
+      const v1 = new THREE.Vector3(positionArray[i1], positionArray[i1 + 1], positionArray[i1 + 2]);
+      const v2 = new THREE.Vector3(positionArray[i2], positionArray[i2 + 1], positionArray[i2 + 2]);
+
+      // Triangle area = 0.5 * |AB x AC|
+      const ab = new THREE.Vector3().subVectors(v1, v0);
+      const ac = new THREE.Vector3().subVectors(v2, v0);
+      const cross = new THREE.Vector3().crossVectors(ab, ac);
+      surfaceArea += cross.length() * 0.5;
+    }
+  }
+
+  return { geometry, zMin, zMax, criticalPoints, surfaceArea };
 }

@@ -71,11 +71,29 @@ mathgraph/
 
 ---
 
-## Phase 2: Polish & SEO [TODO]
+## Phase 2: Calculus & Analysis Features [IN PROGRESS]
+
+### Interactive Analysis
+- [x] **Hover coordinates** - Show (x, y, z) tooltip when hovering over surface
+- [x] **Min/max detection** - Find and mark local minima/maxima with spheres (green=max, red=min)
+- [x] **Surface area calculation** - Display computed surface area in stats panel
+- [ ] **Intersection curves** - Highlight where multiple surfaces intersect
+
+### Future Analysis Features
+- [ ] Volume under surface (numerical integration)
+- [ ] Vector field visualization (gradients, ∇f)
+- [ ] Critical point classification (saddle points, etc.)
+- [ ] Contour lines on surface
+
+---
+
+## Phase 3: Polish & SEO [TODO]
 
 ### Visual Improvements
 - [x] Add axis labels (X, Y, Z text labels)
 - [x] Fixed triangle winding for consistent shading
+- [x] Arrow heads on axes for direction
+- [x] Dynamic grid/axes that scale with range
 - [ ] Add grid lines on the surface (optional toggle)
 - [x] Add "reset view" button to restore default camera position
 - [x] Removed zoom limits - can zoom freely in/out
@@ -98,7 +116,7 @@ mathgraph/
 
 ---
 
-## Phase 3: 2D Grapher [TODO]
+## Phase 4: 2D Grapher [TODO]
 
 ### Core Features
 - [ ] Plot y = f(x) functions
@@ -115,7 +133,7 @@ mathgraph/
 
 ---
 
-## Phase 4: Equation Solver [TODO]
+## Phase 5: Equation Solver [TODO]
 
 ### Core Features
 - [ ] Solve equations for x (linear, quadratic, cubic)
@@ -129,7 +147,7 @@ mathgraph/
 
 ---
 
-## Phase 5: Additional Tools [TODO]
+## Phase 6: Additional Tools [TODO]
 
 ### Matrix Calculator
 - [ ] Matrix input UI
@@ -152,7 +170,7 @@ mathgraph/
 
 ---
 
-## Phase 6: Monetization [TODO]
+## Phase 7: Monetization [TODO]
 
 ### Google AdSense
 - [ ] Apply for AdSense approval (need traffic first)
@@ -180,6 +198,16 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2024-01-15 (Update 4)
+- **Hover coordinates** - Hover over surface to see (x, y, z) coordinates in tooltip
+- **Min/max detection** - Automatically finds and marks critical points with spheres
+  - Green spheres for local maxima
+  - Red spheres for local minima
+- **Surface area calculation** - Computes and displays total surface area
+- **Analysis panel** - New stats panel in top-right showing surface area and critical points
+- **Arrow heads on axes** - Visual direction indicators on X, Y, Z axes
+- **Dynamic grid/axes** - Grid and axes now scale with range changes
 
 ### 2024-01-15 (Update 3)
 - **Axis labels** - X, Y, Z labels at end of each axis (color-coded)
