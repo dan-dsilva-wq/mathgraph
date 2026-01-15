@@ -180,11 +180,15 @@ mathgraph/
 
 ### 2024-01-15
 - **Multi-function graphing** - plot up to 6 functions simultaneously
-- Each function has a distinct color palette (blue, orange, green, purple, cyan, red)
+- Each function has a distinct color palette with hue shifting for depth
 - Surfaces are semi-transparent when multiple functions displayed
 - Add/remove functions with color-coded indicators
 - Share URLs support multiple functions (separated by |)
+- **Auto-update** - graph updates as you type (300ms debounce)
+- **Implicit multiplication** - `2x`, `xy`, `x3`, `2sin(x)` all work now
+- Improved color gradients with hue variation for better depth perception
 - Home page updated to match dark theme
+- Git version control set up for code backups
 
 ### 2024-01-14
 - Initial release of 3D Grapher
