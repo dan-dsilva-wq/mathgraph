@@ -173,6 +173,12 @@ export default function Graph3D({
             obj.material.dispose();
           }
         }
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          if (obj.material instanceof THREE.Material) {
+            obj.material.dispose();
+          }
+        }
         if (obj instanceof THREE.Sprite) {
           if (obj.material.map) obj.material.map.dispose();
           obj.material.dispose();
@@ -195,6 +201,10 @@ export default function Graph3D({
     gridHelper.position.y = 0;
     helpersGroup.add(gridHelper);
 
+    // Arrow head size proportional to axis
+    const arrowLength = axisLength * 0.08;
+    const arrowRadius = axisLength * 0.02;
+
     // X axis (red tint)
     const xAxisGeom = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(-axisLength, 0, 0),
@@ -202,6 +212,14 @@ export default function Graph3D({
     ]);
     const xAxis = new THREE.Line(xAxisGeom, new THREE.LineBasicMaterial({ color: 0xff6666 }));
     helpersGroup.add(xAxis);
+
+    // X axis arrow
+    const xArrowGeom = new THREE.ConeGeometry(arrowRadius, arrowLength, 8);
+    const xArrowMat = new THREE.MeshBasicMaterial({ color: 0xff6666 });
+    const xArrow = new THREE.Mesh(xArrowGeom, xArrowMat);
+    xArrow.position.set(axisLength, 0, 0);
+    xArrow.rotation.z = -Math.PI / 2;
+    helpersGroup.add(xArrow);
 
     // Y axis (up - green tint) - this shows Z values
     const yAxisGeom = new THREE.BufferGeometry().setFromPoints([
@@ -211,6 +229,13 @@ export default function Graph3D({
     const yAxis = new THREE.Line(yAxisGeom, new THREE.LineBasicMaterial({ color: 0x66ff66 }));
     helpersGroup.add(yAxis);
 
+    // Y axis arrow
+    const yArrowGeom = new THREE.ConeGeometry(arrowRadius, arrowLength, 8);
+    const yArrowMat = new THREE.MeshBasicMaterial({ color: 0x66ff66 });
+    const yArrow = new THREE.Mesh(yArrowGeom, yArrowMat);
+    yArrow.position.set(0, axisLength, 0);
+    helpersGroup.add(yArrow);
+
     // Z axis (blue tint) - this is Y in math terms
     const zAxisGeom = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, -axisLength),
@@ -218,6 +243,14 @@ export default function Graph3D({
     ]);
     const zAxis = new THREE.Line(zAxisGeom, new THREE.LineBasicMaterial({ color: 0x6666ff }));
     helpersGroup.add(zAxis);
+
+    // Z axis arrow
+    const zArrowGeom = new THREE.ConeGeometry(arrowRadius, arrowLength, 8);
+    const zArrowMat = new THREE.MeshBasicMaterial({ color: 0x6666ff });
+    const zArrow = new THREE.Mesh(zArrowGeom, zArrowMat);
+    zArrow.position.set(0, 0, axisLength);
+    zArrow.rotation.x = Math.PI / 2;
+    helpersGroup.add(zArrow);
 
     // Helper function to create text labels
     const createLabel = (text: string, color: string): THREE.Sprite => {
