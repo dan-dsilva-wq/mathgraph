@@ -102,11 +102,12 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       const zD = zValues[i + 1][j + 1];
 
       // Skip triangles where all vertices are undefined
+      // Use consistent counterclockwise winding for proper normals
       if (zA !== null || zB !== null || zC !== null) {
-        indices.push(a, b, c);
+        indices.push(a, c, b);
       }
       if (zB !== null || zC !== null || zD !== null) {
-        indices.push(b, d, c);
+        indices.push(b, c, d);
       }
     }
   }

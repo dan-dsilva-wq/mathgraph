@@ -142,6 +142,47 @@ export default function Graph3D({
     const zAxis = new THREE.Line(zAxisGeom, new THREE.LineBasicMaterial({ color: 0x6666ff }));
     scene.add(zAxis);
 
+    // Helper function to create text labels
+    const createLabel = (text: string, color: string): THREE.Sprite => {
+      const canvas = document.createElement('canvas');
+      const size = 128;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, size, size);
+
+      ctx.font = 'bold 80px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = color;
+      ctx.fillText(text, size / 2, size / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(1.5, 1.5, 1);
+      return sprite;
+    };
+
+    // Add axis labels
+    const xLabel = createLabel('X', '#ff6666');
+    xLabel.position.set(axisLength + 0.8, 0, 0);
+    scene.add(xLabel);
+
+    const yLabel = createLabel('Z', '#66ff66'); // Math Z is displayed on Y axis
+    yLabel.position.set(0, axisLength + 0.8, 0);
+    scene.add(yLabel);
+
+    const zLabel = createLabel('Y', '#6666ff'); // Math Y is displayed on Z axis
+    zLabel.position.set(0, 0, axisLength + 0.8);
+    scene.add(zLabel);
+
     // Animation loop
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate);

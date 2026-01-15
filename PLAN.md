@@ -74,7 +74,8 @@ mathgraph/
 ## Phase 2: Polish & SEO [TODO]
 
 ### Visual Improvements
-- [ ] Add axis labels (X, Y, Z text labels)
+- [x] Add axis labels (X, Y, Z text labels)
+- [x] Fixed triangle winding for consistent shading
 - [ ] Add grid lines on the surface (optional toggle)
 - [x] Add "reset view" button to restore default camera position
 - [x] Removed zoom limits - can zoom freely in/out
@@ -179,6 +180,10 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2024-01-15 (Update 3)
+- **Axis labels** - X, Y, Z labels at end of each axis (color-coded)
+- **Fixed shading bug** - consistent triangle winding fixes lighting on paraboloid/symmetric surfaces
 
 ### 2024-01-15 (Update 2)
 - **Unlimited zoom** - removed zoom limits so users can zoom out/in freely
