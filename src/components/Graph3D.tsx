@@ -182,12 +182,12 @@ export default function Graph3D({
 
     const helpersGroup = new THREE.Group();
 
-    // Calculate size based on ranges
+    // Calculate size based on ranges - make grid larger than the data range
     const xSpan = Math.abs(xRange[1] - xRange[0]);
     const ySpan = Math.abs(yRange[1] - yRange[0]);
     const maxSpan = Math.max(xSpan, ySpan);
-    const axisLength = maxSpan * 0.6;
-    const gridSize = maxSpan;
+    const axisLength = maxSpan * 1.2;
+    const gridSize = maxSpan * 2;
     const gridDivisions = 20;
 
     // Grid on the floor (at y=0 level, which is the center of the graph)
