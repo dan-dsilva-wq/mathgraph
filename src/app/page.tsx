@@ -40,23 +40,29 @@ export default function Home() {
             </span>
           </Link>
 
-          {/* 2D Grapher - Coming Soon */}
-          <div className="bg-slate-900/50 p-6 rounded-xl border border-dashed border-slate-700">
-            <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* 2D Grapher */}
+          <Link
+            href="/2d-grapher"
+            className="group bg-slate-900 p-6 rounded-xl border border-slate-800 hover:border-green-500 transition-all hover:bg-slate-800/50"
+          >
+            <div className="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-500/30 transition-colors">
+              <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-slate-500 mb-2">
+            <h2 className="text-xl font-semibold text-white mb-2">
               2D Grapher
             </h2>
-            <p className="text-slate-600 text-sm mb-4">
-              Plot 2D functions like y = sin(x), quadratics, and more.
+            <p className="text-slate-400 text-sm mb-4">
+              Plot 2D functions like y = sin(x), quadratics, and more. Pan and zoom interactively.
             </p>
-            <span className="text-slate-600 text-sm font-medium">
-              Coming Soon
+            <span className="text-green-400 text-sm font-medium group-hover:text-green-300 flex items-center gap-1">
+              Open Tool
+              <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </span>
-          </div>
+          </Link>
 
           {/* Equation Solver - Coming Soon */}
           <div className="bg-slate-900/50 p-6 rounded-xl border border-dashed border-slate-700">

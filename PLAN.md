@@ -109,7 +109,7 @@ mathgraph/
 - [x] Removed zoom limits - can zoom freely in/out
 - [x] Auto-reset camera when ranges change
 - [ ] Mobile touch controls optimization
-- [ ] Loading skeleton while Three.js initializes
+- [x] Loading skeleton while Three.js initializes
 
 ### SEO & Discoverability
 - [ ] Add meta descriptions for each page
@@ -120,25 +120,30 @@ mathgraph/
 
 ### Quality of Life
 - [ ] Keyboard shortcuts (Enter to graph, Escape to clear)
-- [ ] Recent equations history (localStorage)
-- [ ] Download graph as PNG image
+- [x] Recent equations history (localStorage)
+- [x] Download graph as PNG image
 - [ ] Fullscreen mode toggle
 
 ---
 
-## Phase 4: 2D Grapher [TODO]
+## Phase 4: 2D Grapher [COMPLETED]
 
 ### Core Features
-- [ ] Plot y = f(x) functions
-- [ ] Multiple functions on same graph (different colors)
-- [ ] Zoom and pan controls
-- [ ] Grid with axis labels
+- [x] Plot y = f(x) functions
+- [x] Multiple functions on same graph (different colors)
+- [x] Zoom and pan controls (scroll to zoom, drag to pan)
+- [x] Grid with axis labels
+- [x] Hover coordinates tooltip
+- [x] Download as PNG
+- [x] Share URL support
+- [x] Recent equations history
+- [x] Example equations picker
 - [ ] Intersection point detection
 - [ ] Derivative visualization (optional)
 
 ### Technical Approach
-- Use Canvas 2D or a lightweight charting library
-- Reuse math.js parser
+- Canvas 2D for fast rendering
+- Custom evaluator for expressions
 - Similar UI pattern to 3D grapher
 
 ---
