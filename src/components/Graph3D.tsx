@@ -50,8 +50,6 @@ export default function Graph3D({
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const [error, setError] = useState<string | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; z: number; screenX: number; screenY: number } | null>(null);
-  const [criticalPoints, setCriticalPoints] = useState<CriticalPoint[]>([]);
-  const [surfaceArea, setSurfaceArea] = useState<number>(0);
   const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
 
@@ -568,10 +566,6 @@ export default function Graph3D({
       sceneRef.current.add(criticalPointsGroup);
       criticalPointsGroupRef.current = criticalPointsGroup;
 
-      // Update state
-      setCriticalPoints(allCriticalPoints);
-      setSurfaceArea(surfaceAreas.reduce((sum, s) => sum + s.surfaceArea, 0));
-
       // Call stats callback
       if (onStatsChange) {
         const globalMin = allCriticalPoints.find(p => p.type === 'minimum');
@@ -614,26 +608,6 @@ export default function Graph3D({
           <div><span className="text-green-400">z:</span> {hoverPoint.z.toFixed(3)}</div>
         </div>
       )}
-      {/* Stats Panel */}
-      <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/10">
-        <div className="text-gray-400 text-[10px] mb-2 uppercase tracking-wide">Analysis</div>
-        <div className="space-y-2">
-          <div>
-            <span className="text-gray-400">Surface Area:</span>{' '}
-            <span className="text-white">{surfaceArea.toFixed(2)} units²</span>
-          </div>
-          {criticalPoints.map((point, i) => (
-            <div key={i} className={`p-1.5 rounded ${point.type === 'maximum' ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
-              <div className={`font-bold ${point.type === 'maximum' ? 'text-green-400' : 'text-red-400'}`}>
-                {point.type === 'maximum' ? '▲ Global Maximum' : '▼ Global Minimum'}
-              </div>
-              <div className="text-white text-[11px]">
-                ({point.x.toFixed(3)}, {point.y.toFixed(3)}, {point.z.toFixed(3)})
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
       <div className="absolute bottom-4 left-4 flex items-center gap-2">
         <button
           onClick={resetView}

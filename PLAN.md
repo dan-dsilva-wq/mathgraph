@@ -89,11 +89,11 @@ mathgraph/
   - Handles: powers (y^n including y^(2^e)), trig functions, exp/log, sqrt, addition, subtraction, multiplication, division
   - Properly renders LaTeX using mathjs's built-in toTex() for all expressions
   - Expandable "Show working" section with step-by-step derivation
+- [x] **Volume between two surfaces** - Calculate and display volume with "Show working"
 - [ ] **Intersection curve visualization** - Highlight where multiple surfaces intersect on the 3D graph
 - [ ] Vector field visualization (gradients, ∇f)
 - [ ] Critical point classification (saddle points, etc.)
 - [ ] Contour lines on surface
-- [ ] Volume between two surfaces
 
 ---
 
@@ -223,11 +223,18 @@ mathgraph/
   - Handles cases where both sides of equation contain y
   - **New quadratic solver** for y² terms using calculus (derivatives to find coefficients)
   - Uses `rationalize()` for full simplification: `(10-2x²)/2` → `5-x²`
+  - Evaluates inverse trig at constants: `arcsin(0)` → `0`, `arcsin(1)` → `π/2`
+  - Simplifies sqrt of constants: `√4` → `2`
 - **Volume button fix** - Button reappears when expressions drop below 2 (was stuck in volume mode)
 - **Volume Between Surfaces feature** - Interactive calculation between any two surfaces
   - Click "Calculate Volume" to activate
   - Auto-adds z=0 as second surface if only one exists
   - Editable expressions shown with color indicators
+  - "Show working" button shows the integral formula and numerical method details
+- **Volume calculation fix** - Fixed midpoint rule to use correct cell count (60×60 not 61×61)
+- **Surface area per-expression** - Now shows surface area for each function separately with "Show working"
+- **Removed redundant stats overlay** - Analysis panel in top-right removed (info now in sidebar)
+- **Cleaner UI** - All calculations consolidated in left sidebar panel
 
 ### 2025-01-15
 - **Intersection equation solver** - When plotting 2 functions, automatically generates and solves the intersection equation for y
