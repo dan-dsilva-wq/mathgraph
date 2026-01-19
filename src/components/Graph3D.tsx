@@ -49,6 +49,7 @@ export default function Graph3D({
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; z: number; screenX: number; screenY: number } | null>(null);
   const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
@@ -74,6 +75,24 @@ export default function Graph3D({
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
   }, [getIdealCameraDistance]);
+
+  // Download graph as PNG
+  const downloadPNG = useCallback(() => {
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+
+    // Render the scene to get the latest frame
+    rendererRef.current.render(sceneRef.current, cameraRef.current);
+
+    // Get the canvas data
+    const canvas = rendererRef.current.domElement;
+    const dataURL = canvas.toDataURL('image/png');
+
+    // Create download link
+    const link = document.createElement('a');
+    link.download = 'mathgraph-3d.png';
+    link.href = dataURL;
+    link.click();
+  }, []);
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -156,6 +175,9 @@ export default function Graph3D({
       renderer.render(scene, camera);
     };
     animate();
+
+    // Mark as loaded after first frame
+    setIsLoading(false);
 
     // Handle resize
     const handleResize = () => {
@@ -589,6 +611,23 @@ export default function Graph3D({
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
+      {/* Loading skeleton */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center">
+          <div className="relative w-24 h-24 mb-4">
+            {/* Animated 3D cube wireframe */}
+            <div className="absolute inset-0 border-2 border-blue-500/50 animate-spin" style={{ animationDuration: '3s' }} />
+            <div className="absolute inset-2 border-2 border-purple-500/50 animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }} />
+            <div className="absolute inset-4 border-2 border-cyan-500/50 animate-spin" style={{ animationDuration: '4s' }} />
+          </div>
+          <div className="text-slate-400 text-sm">Initializing 3D renderer...</div>
+          <div className="mt-2 flex gap-1">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      )}
       {error && (
         <div className="absolute top-4 left-4 right-4 bg-red-500/90 text-white px-4 py-2 rounded-lg text-sm backdrop-blur-sm">
           {error}
@@ -617,6 +656,15 @@ export default function Graph3D({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           Reset View
+        </button>
+        <button
+          onClick={downloadPNG}
+          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Download PNG
         </button>
         <span className="text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
           Drag to rotate &bull; Scroll to zoom

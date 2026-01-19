@@ -22,6 +22,13 @@ const Graph3D = dynamic(() => import('@/components/Graph3D'), {
 
 const MAX_FUNCTIONS = 6;
 const DEBOUNCE_MS = 300; // Update graph 300ms after typing stops
+const MAX_HISTORY = 10;
+const HISTORY_KEY = 'mathgraph-recent-equations';
+
+interface HistoryEntry {
+  expressions: string[];
+  timestamp: number;
+}
 
 function Graph3DPage() {
   const searchParams = useSearchParams();
@@ -53,8 +60,70 @@ function Graph3DPage() {
   const [showVolumeWorking, setShowVolumeWorking] = useState(false);
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
+  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY);
+      if (stored) {
+        setRecentEquations(JSON.parse(stored));
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
+
+  // Save to history when expressions change (debounced)
+  const saveToHistory = useCallback((exprs: string[]) => {
+    const validExprs = exprs.filter(e => e.trim() && validateExpression(e).valid);
+    if (validExprs.length === 0) return;
+
+    setRecentEquations(prev => {
+      // Don't add if it's the same as the most recent
+      const exprKey = validExprs.join('|');
+      if (prev.length > 0 && prev[0].expressions.join('|') === exprKey) {
+        return prev;
+      }
+
+      const newEntry: HistoryEntry = {
+        expressions: validExprs,
+        timestamp: Date.now(),
+      };
+
+      // Remove duplicates and limit to MAX_HISTORY
+      const filtered = prev.filter(h => h.expressions.join('|') !== exprKey);
+      const newHistory = [newEntry, ...filtered].slice(0, MAX_HISTORY);
+
+      // Save to localStorage
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
+      } catch {
+        // Ignore localStorage errors
+      }
+
+      return newHistory;
+    });
+  }, []);
+
+  // Save to history when active expressions change
+  useEffect(() => {
+    if (activeExpressions.length > 0) {
+      const timer = setTimeout(() => {
+        saveToHistory(activeExpressions.map(e => e.expression));
+      }, 1000); // Wait 1 second after changes stabilize
+      return () => clearTimeout(timer);
+    }
+  }, [activeExpressions, saveToHistory]);
+
+  // Load expressions from history
+  const loadFromHistory = (entry: HistoryEntry) => {
+    setExpressions(entry.expressions);
+    setShowHistory(false);
+  };
 
   // Helper to get just the expression strings from activeExpressions
   const activeExpressionStrings = activeExpressions.map(e => e.expression);
@@ -547,7 +616,7 @@ function Graph3DPage() {
           </div>
 
           {/* Share */}
-          <div className="p-4">
+          <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Share</h3>
             <button
               onClick={handleShare}
@@ -560,6 +629,49 @@ function Graph3DPage() {
               Copy Share Link
             </button>
           </div>
+
+          {/* Recent Equations */}
+          {recentEquations.length > 0 && (
+            <div className="p-4 border-b border-slate-800">
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="flex items-center justify-between w-full text-xs font-medium text-slate-400 uppercase tracking-wide"
+              >
+                <span>Recent Equations ({recentEquations.length})</span>
+                <svg
+                  className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showHistory && (
+                <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                  {recentEquations.map((entry, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => loadFromHistory(entry)}
+                      className="w-full text-left p-2 bg-slate-800/50 hover:bg-slate-700/50 rounded border border-slate-700/50 hover:border-slate-600 transition-colors"
+                    >
+                      <div className="text-xs text-slate-300 font-mono truncate">
+                        {entry.expressions.map((e, i) => (
+                          <span key={i}>
+                            {i > 0 && <span className="text-slate-500"> | </span>}
+                            z = {e}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        {new Date(entry.timestamp).toLocaleDateString()} {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tips - pushed to bottom */}
           <div className="mt-auto p-4 border-t border-slate-800">
