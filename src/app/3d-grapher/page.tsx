@@ -50,6 +50,7 @@ function Graph3DPage() {
   }>({ surfaceAreas: [], volume: 0, globalMin: null, globalMax: null });
   const [showIntersectionWorking, setShowIntersectionWorking] = useState(false);
   const [showSurfaceAreaWorking, setShowSurfaceAreaWorking] = useState(false);
+  const [showVolumeWorking, setShowVolumeWorking] = useState(false);
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
 
@@ -423,6 +424,39 @@ function Graph3DPage() {
                         <div className="text-white font-mono text-lg">
                           = {volumeBetweenSurfaces !== null ? volumeBetweenSurfaces.toFixed(4) : '...'} units³
                         </div>
+
+                        {/* Show working toggle */}
+                        <button
+                          onClick={() => setShowVolumeWorking(!showVolumeWorking)}
+                          className="mt-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                        >
+                          <svg
+                            className={`w-3 h-3 transition-transform ${showVolumeWorking ? 'rotate-90' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                          Show working
+                        </button>
+
+                        {showVolumeWorking && (
+                          <div className="mt-2 pl-2 border-l border-slate-600 space-y-1 text-xs">
+                            <div className="text-slate-400">
+                              <InlineMath math={`V = \\int_{${yRange[0]}}^{${yRange[1]}} \\int_{${xRange[0]}}^{${xRange[1]}} |z_1 - z_2| \\, dx \\, dy`} />
+                            </div>
+                            <div className="text-slate-400">
+                              <InlineMath math={`V = \\int_{${yRange[0]}}^{${yRange[1]}} \\int_{${xRange[0]}}^{${xRange[1]}} |(${activeExpressions[0].expression}) - (${activeExpressions[1].expression})| \\, dx \\, dy`} />
+                            </div>
+                            <div className="text-slate-500 mt-1">
+                              (Computed numerically using midpoint rule with 60×60 grid)
+                            </div>
+                            <div className="text-slate-500">
+                              Cell area = {((xRange[1] - xRange[0]) / 60 * (yRange[1] - yRange[0]) / 60).toFixed(6)} units²
+                            </div>
+                          </div>
+                        )}
                       </>
                     ) : activeExpressions.length > 2 ? (
                       <div className="text-amber-400 text-xs">
