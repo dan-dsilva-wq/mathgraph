@@ -51,18 +51,16 @@ mathgraph/
 │   │   ├── layout.tsx          # Root layout + KaTeX CSS
 │   │   ├── page.tsx            # Home page
 │   │   └── 3d-grapher/
-│   │       └── page.tsx        # 3D grapher page
+│   │       └── page.tsx        # 3D grapher page (includes Calculations panel)
 │   ├── components/
-│   │   ├── Graph3D.tsx         # Three.js canvas
+│   │   ├── Graph3D.tsx         # Three.js canvas + hover coords + critical point markers
 │   │   ├── EquationInput.tsx   # Input with KaTeX preview
-│   │   ├── RangeControls.tsx   # X/Y axis controls
-│   │   ├── ExamplePicker.tsx   # Preset equations
-│   │   └── ShareButton.tsx     # Copy shareable link
+│   │   └── RangeControls.tsx   # X/Y axis controls
 │   ├── lib/
-│   │   ├── mathParser.ts       # Expression parsing
+│   │   ├── mathParser.ts       # Expression parsing, LaTeX conversion, intersection solver
 │   │   └── graphing/
-│   │       ├── surface3D.ts    # Mesh generation
-│   │       └── colors.ts       # Color gradient
+│   │       ├── surface3D.ts    # Mesh generation + surface area + volume calc
+│   │       └── colors.ts       # Color gradient (6 palettes for multi-function)
 │   └── types/
 │       └── index.ts            # TypeScript types
 ├── PLAN.md                     # This file
@@ -71,19 +69,31 @@ mathgraph/
 
 ---
 
-## Phase 2: Calculus & Analysis Features [IN PROGRESS]
+## Phase 2: Calculus & Analysis Features [COMPLETED]
 
 ### Interactive Analysis
 - [x] **Hover coordinates** - Show (x, y, z) tooltip when hovering over surface
-- [x] **Min/max detection** - Find and mark local minima/maxima with spheres (green=max, red=min)
-- [x] **Surface area calculation** - Display computed surface area in stats panel
-- [ ] **Intersection curves** - Highlight where multiple surfaces intersect
+- [x] **Global min/max detection** - Find and mark global minimum/maximum with spheres (green=max, red=min)
+- [x] **Floating coordinate labels** - Min/max markers show exact coordinates above them
+- [x] **Surface area calculation** - Numerical integration using triangle mesh areas
+- [x] **Volume calculation** - Volume under surface using trapezoidal rule
+- [x] **Calculations panel** - Sidebar panel showing formulas with KaTeX rendering:
+  - Global minimum/maximum coordinates
+  - Surface area with integral formula
+  - Volume under surface with integral formula
+- [x] **Grid at z=0** - Grid is now properly positioned at the mathematical z=0 plane
 
 ### Future Analysis Features
-- [ ] Volume under surface (numerical integration)
+- [x] **Intersection equation solver** - When 2 functions are plotted, shows the solved intersection equation (y = ...)
+  - Universal AST-based solver that recursively isolates y
+  - Handles: powers (y^n including y^(2^e)), trig functions, exp/log, sqrt, addition, subtraction, multiplication, division
+  - Properly renders LaTeX using mathjs's built-in toTex() for all expressions
+  - Expandable "Show working" section with step-by-step derivation
+- [ ] **Intersection curve visualization** - Highlight where multiple surfaces intersect on the 3D graph
 - [ ] Vector field visualization (gradients, ∇f)
 - [ ] Critical point classification (saddle points, etc.)
 - [ ] Contour lines on surface
+- [ ] Volume between two surfaces
 
 ---
 
@@ -198,6 +208,57 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2026-01-19
+- **Multi-surface z-scaling fix** - All surfaces now use a global z-range for consistent positioning
+  - Previously each surface was scaled independently, causing z=2 and z=3 to appear at the same height
+  - Now surfaces are positioned correctly relative to each other and the grid
+- **Grid always visible** - Z range now always includes z=0, keeping the reference grid in view
+- **Function color consistency** - Colors now match input position even when some inputs are empty
+  - Tracks original indices so second function keeps second color even if first input is blank
+- **Auto-brackets for trig functions** - `sinx` auto-converts to `sin(x)`, `cosy` to `cos(y)`, etc.
+- **Improved intersection equation solver**:
+  - Now handles parallel surfaces: shows "No intersection (parallel surfaces)" instead of "-1=0"
+  - Better handling of multi-term expressions (separates y-terms from non-y terms)
+  - Handles cases where both sides of equation contain y
+  - **New quadratic solver** for y² terms using calculus (derivatives to find coefficients)
+  - Uses `rationalize()` for full simplification: `(10-2x²)/2` → `5-x²`
+- **Volume button fix** - Button reappears when expressions drop below 2 (was stuck in volume mode)
+- **Volume Between Surfaces feature** - Interactive calculation between any two surfaces
+  - Click "Calculate Volume" to activate
+  - Auto-adds z=0 as second surface if only one exists
+  - Editable expressions shown with color indicators
+
+### 2025-01-15
+- **Intersection equation solver** - When plotting 2 functions, automatically generates and solves the intersection equation for y
+  - Shows simplified result (e.g., `y = ±√(3 - x²)`)
+  - Expandable "Show working" button reveals step-by-step derivation
+  - **Universal AST-based solver** using mathjs parse tree analysis:
+    - Recursively unwraps operations to isolate y
+    - Handles any power: `y^(2^e)`, `y^(3^x)`, etc.
+    - Handles trig: sin, cos, tan and their inverses
+    - Handles exp/log, sqrt
+    - Handles addition/subtraction: `y^2 + x^2 = 3` → `y = ±√(3 - x²)`
+    - Handles multiplication/division
+  - Uses mathjs's built-in `toTex()` for proper LaTeX rendering of all expressions
+- **Range input improvements** - Changed from number inputs to text inputs
+  - Can now delete entire value and type new number (was blocked before)
+  - Updates on blur or Enter key
+  - No more ugly number spinner arrows
+- **Hidden scrollbars** - Removed white scrollbars from intersection equation display
+- Added `@types/react-katex` for TypeScript support
+
+### 2024-01-16 (Update 5)
+- **Calculations panel** - Replaced example equations with a calculations sidebar showing:
+  - Global minimum coordinates with marker
+  - Global maximum coordinates with marker
+  - Surface area with formula (using KaTeX): `A = ∬_D √(1 + (∂z/∂x)² + (∂z/∂y)²) dA`
+  - Volume under surface with formula: `V = ∬_D |z(x,y)| dA`
+- **Volume calculation** - Added numerical integration for volume under surface
+- **Floating labels** - Min/max markers now display coordinates above them
+- **Grid positioned at z=0** - Grid helper now correctly positioned at mathematical z=0 plane
+- **Simplified critical points** - Changed from all local extrema to just global min/max (more useful)
+- Added `react-katex` dependency for formula rendering
 
 ### 2024-01-15 (Update 4)
 - **Hover coordinates** - Hover over surface to see (x, y, z) coordinates in tooltip

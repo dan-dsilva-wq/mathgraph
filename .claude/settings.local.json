@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel --version:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(npm view:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(npx vercel --prod)",
+      "Bash(git add:*)"
+    ]
+  }
+}

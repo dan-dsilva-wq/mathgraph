@@ -3,14 +3,31 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { generateSurface, CriticalPoint } from '@/lib/graphing/surface3D';
+import { generateSurface, calculateZRange, CriticalPoint } from '@/lib/graphing/surface3D';
+
+interface ExpressionWithIndex {
+  expression: string;
+  originalIndex: number;
+}
+
+interface SurfaceStats {
+  expression: string;
+  originalIndex: number;
+  surfaceArea: number;
+}
 
 interface Graph3DProps {
-  expressions: string[];
+  expressions: ExpressionWithIndex[];
   xRange: [number, number];
   yRange: [number, number];
   resolution?: number;
   onZRangeChange?: (zMin: number, zMax: number) => void;
+  onStatsChange?: (stats: {
+    surfaceAreas: SurfaceStats[];
+    volume: number;
+    globalMin: { x: number; y: number; z: number } | null;
+    globalMax: { x: number; y: number; z: number } | null;
+  }) => void;
 }
 
 export default function Graph3D({
@@ -19,6 +36,7 @@ export default function Graph3D({
   yRange,
   resolution = 60,
   onZRangeChange,
+  onStatsChange,
 }: Graph3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -400,36 +418,62 @@ export default function Graph3D({
       criticalPointsGroupRef.current = null;
     }
 
-    // Filter valid expressions
-    const validExpressions = expressions.filter(expr => expr.trim());
+    // Filter valid expressions (they should already be filtered, but double-check)
+    const validExpressions = expressions.filter(e => e.expression.trim());
     if (validExpressions.length === 0) return;
 
     try {
       setError(null);
 
+      // First pass: Calculate global z range across all expressions
+      let globalZMin = Infinity;
+      let globalZMax = -Infinity;
+
+      validExpressions.forEach(({ expression }) => {
+        const range = calculateZRange(expression, xRange, yRange, resolution);
+        if (range) {
+          globalZMin = Math.min(globalZMin, range.zMin);
+          globalZMax = Math.max(globalZMax, range.zMax);
+        }
+      });
+
+      // Handle case where all surfaces have same z or no valid z values
+      if (!isFinite(globalZMin) || !isFinite(globalZMax)) {
+        globalZMin = -1;
+        globalZMax = 1;
+      } else if (globalZMin === globalZMax) {
+        globalZMin -= 1;
+        globalZMax += 1;
+      }
+
+      // Always include z=0 in the range so the grid stays visible
+      // This ensures the camera view includes both the surfaces and the reference grid
+      globalZMin = Math.min(globalZMin, 0);
+      globalZMax = Math.max(globalZMax, 0);
+
       // Create a group to hold all surfaces
       const surfaceGroup = new THREE.Group();
       const criticalPointsGroup = new THREE.Group();
-      let globalZMin = Infinity;
-      let globalZMax = -Infinity;
       let allCriticalPoints: CriticalPoint[] = [];
-      let totalSurfaceArea = 0;
+      const surfaceAreas: SurfaceStats[] = [];
+      let totalVolume = 0;
 
-      // Generate surface for each expression
-      validExpressions.forEach((expression, index) => {
+      // Second pass: Generate surface for each expression using global z range
+      validExpressions.forEach(({ expression, originalIndex }, index) => {
         try {
-          const { geometry, zMin, zMax, criticalPoints: points, surfaceArea: area, zeroPlaneY: zPlane } = generateSurface({
+          const { geometry, criticalPoints: points, surfaceArea: area, volume: vol, zeroPlaneY: zPlane } = generateSurface({
             expression,
             xRange,
             yRange,
             resolution,
-            functionIndex: index,
+            functionIndex: originalIndex, // Use original index for consistent colors
+            globalZMin,
+            globalZMax,
           });
 
-          globalZMin = Math.min(globalZMin, zMin);
-          globalZMax = Math.max(globalZMax, zMax);
           allCriticalPoints = [...allCriticalPoints, ...points];
-          totalSurfaceArea += area;
+          surfaceAreas.push({ expression, originalIndex, surfaceArea: area });
+          totalVolume += vol;
 
           // Use the first function's zero plane for grid positioning
           if (index === 0) {
@@ -526,7 +570,19 @@ export default function Graph3D({
 
       // Update state
       setCriticalPoints(allCriticalPoints);
-      setSurfaceArea(totalSurfaceArea);
+      setSurfaceArea(surfaceAreas.reduce((sum, s) => sum + s.surfaceArea, 0));
+
+      // Call stats callback
+      if (onStatsChange) {
+        const globalMin = allCriticalPoints.find(p => p.type === 'minimum');
+        const globalMax = allCriticalPoints.find(p => p.type === 'maximum');
+        onStatsChange({
+          surfaceAreas,
+          volume: totalVolume,
+          globalMin: globalMin ? { x: globalMin.x, y: globalMin.y, z: globalMin.z } : null,
+          globalMax: globalMax ? { x: globalMax.x, y: globalMax.y, z: globalMax.z } : null,
+        });
+      }
 
       if (onZRangeChange && isFinite(globalZMin) && isFinite(globalZMax)) {
         onZRangeChange(globalZMin, globalZMax);
@@ -534,7 +590,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, resolution, onZRangeChange]);
+  }, [expressions, xRange, yRange, resolution, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">

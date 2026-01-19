@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 interface RangeControlsProps {
   xRange: [number, number];
   yRange: [number, number];
@@ -13,27 +15,69 @@ export default function RangeControls({
   onXRangeChange,
   onYRangeChange,
 }: RangeControlsProps) {
-  const handleMinChange = (
-    axis: 'x' | 'y',
-    value: string,
-    currentRange: [number, number],
-    setter: (range: [number, number]) => void
+  // Local string state for inputs - allows empty values while typing
+  const [xMinStr, setXMinStr] = useState(String(xRange[0]));
+  const [xMaxStr, setXMaxStr] = useState(String(xRange[1]));
+  const [yMinStr, setYMinStr] = useState(String(yRange[0]));
+  const [yMaxStr, setYMaxStr] = useState(String(yRange[1]));
+
+  // Sync local state when props change externally
+  useEffect(() => {
+    setXMinStr(String(xRange[0]));
+    setXMaxStr(String(xRange[1]));
+  }, [xRange]);
+
+  useEffect(() => {
+    setYMinStr(String(yRange[0]));
+    setYMaxStr(String(yRange[1]));
+  }, [yRange]);
+
+  const handleBlur = (
+    type: 'xMin' | 'xMax' | 'yMin' | 'yMax',
+    value: string
   ) => {
     const num = parseFloat(value);
-    if (!isNaN(num) && num < currentRange[1]) {
-      setter([num, currentRange[1]]);
+
+    switch (type) {
+      case 'xMin':
+        if (!isNaN(num) && num < xRange[1]) {
+          onXRangeChange([num, xRange[1]]);
+        } else {
+          setXMinStr(String(xRange[0])); // Reset to valid value
+        }
+        break;
+      case 'xMax':
+        if (!isNaN(num) && num > xRange[0]) {
+          onXRangeChange([xRange[0], num]);
+        } else {
+          setXMaxStr(String(xRange[1]));
+        }
+        break;
+      case 'yMin':
+        if (!isNaN(num) && num < yRange[1]) {
+          onYRangeChange([num, yRange[1]]);
+        } else {
+          setYMinStr(String(yRange[0]));
+        }
+        break;
+      case 'yMax':
+        if (!isNaN(num) && num > yRange[0]) {
+          onYRangeChange([yRange[0], num]);
+        } else {
+          setYMaxStr(String(yRange[1]));
+        }
+        break;
     }
   };
 
-  const handleMaxChange = (
-    axis: 'x' | 'y',
-    value: string,
-    currentRange: [number, number],
-    setter: (range: [number, number]) => void
+  const handleKeyDown = (
+    e: React.KeyboardEvent,
+    type: 'xMin' | 'xMax' | 'yMin' | 'yMax',
+    value: string
   ) => {
-    const num = parseFloat(value);
-    if (!isNaN(num) && num > currentRange[0]) {
-      setter([currentRange[0], num]);
+    if (e.key === 'Enter') {
+      handleBlur(type, value);
+      (e.target as HTMLInputElement).blur();
     }
   };
 
@@ -46,17 +90,23 @@ export default function RangeControls({
         <label className="block text-xs text-slate-500">X Axis</label>
         <div className="flex items-center gap-2">
           <input
-            type="number"
-            value={xRange[0]}
-            onChange={(e) => handleMinChange('x', e.target.value, xRange, onXRangeChange)}
-            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono"
+            type="text"
+            inputMode="numeric"
+            value={xMinStr}
+            onChange={(e) => setXMinStr(e.target.value)}
+            onBlur={(e) => handleBlur('xMin', e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, 'xMin', xMinStr)}
+            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
           />
           <span className="text-slate-500 text-sm">to</span>
           <input
-            type="number"
-            value={xRange[1]}
-            onChange={(e) => handleMaxChange('x', e.target.value, xRange, onXRangeChange)}
-            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono"
+            type="text"
+            inputMode="numeric"
+            value={xMaxStr}
+            onChange={(e) => setXMaxStr(e.target.value)}
+            onBlur={(e) => handleBlur('xMax', e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, 'xMax', xMaxStr)}
+            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
           />
         </div>
       </div>
@@ -66,17 +116,23 @@ export default function RangeControls({
         <label className="block text-xs text-slate-500">Y Axis</label>
         <div className="flex items-center gap-2">
           <input
-            type="number"
-            value={yRange[0]}
-            onChange={(e) => handleMinChange('y', e.target.value, yRange, onYRangeChange)}
-            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono"
+            type="text"
+            inputMode="numeric"
+            value={yMinStr}
+            onChange={(e) => setYMinStr(e.target.value)}
+            onBlur={(e) => handleBlur('yMin', e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, 'yMin', yMinStr)}
+            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
           />
           <span className="text-slate-500 text-sm">to</span>
           <input
-            type="number"
-            value={yRange[1]}
-            onChange={(e) => handleMaxChange('y', e.target.value, yRange, onYRangeChange)}
-            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono"
+            type="text"
+            inputMode="numeric"
+            value={yMaxStr}
+            onChange={(e) => setYMaxStr(e.target.value)}
+            onBlur={(e) => handleBlur('yMax', e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, 'yMax', yMaxStr)}
+            className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
           />
         </div>
       </div>

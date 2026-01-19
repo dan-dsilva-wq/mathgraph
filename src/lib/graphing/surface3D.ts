@@ -8,6 +8,8 @@ interface SurfaceOptions {
   yRange: [number, number];
   resolution: number;
   functionIndex?: number; // For multi-function coloring
+  globalZMin?: number; // For consistent scaling across multiple surfaces
+  globalZMax?: number; // For consistent scaling across multiple surfaces
 }
 
 export interface CriticalPoint {
@@ -24,11 +26,12 @@ interface SurfaceResult {
   zMax: number;
   criticalPoints: CriticalPoint[];
   surfaceArea: number;
+  volume: number; // Volume under the surface (above z=0)
   zeroPlaneY: number; // Where z=0 is in Three.js Y coordinates
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
-  const { expression, xRange, yRange, resolution, functionIndex = 0 } = options;
+  const { expression, xRange, yRange, resolution, functionIndex = 0, globalZMin, globalZMax } = options;
   const evaluate = createEvaluator(expression);
 
   const [xMin, xMax] = xRange;
@@ -71,10 +74,14 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     zMax += 1;
   }
 
+  // Use global z range if provided (for consistent scaling across multiple surfaces)
+  const effectiveZMin = globalZMin !== undefined ? globalZMin : zMin;
+  const effectiveZMax = globalZMax !== undefined ? globalZMax : zMax;
+
   // Calculate z scaling factor to fit proportionally
-  const actualZSpan = zMax - zMin;
+  const actualZSpan = effectiveZMax - effectiveZMin;
   const zScale = actualZSpan > 0 ? targetZSpan / actualZSpan : 1;
-  const zOffset = (zMin + zMax) / 2; // Center the surface
+  const zOffset = (effectiveZMin + effectiveZMax) / 2; // Center the surface
 
   // Second pass: build geometry with scaled z values
   const vertices: number[] = [];
@@ -200,8 +207,63 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     }
   }
 
+  // Calculate volume under the surface using the trapezoidal rule
+  // Volume = ∫∫ z(x,y) dA ≈ Σ z_i * ΔA
+  let volume = 0;
+  const cellArea = xStep * yStep;
+
+  for (let i = 0; i <= resolution; i++) {
+    for (let j = 0; j <= resolution; j++) {
+      const z = zValues[i][j];
+      if (z !== null) {
+        // Use absolute value for total volume (both above and below z=0)
+        volume += Math.abs(z) * cellArea;
+      }
+    }
+  }
+
   // Calculate where z=0 is in Three.js Y coordinates
   const zeroPlaneY = (0 - zOffset) * zScale;
 
-  return { geometry, zMin, zMax, criticalPoints, surfaceArea, zeroPlaneY };
+  return { geometry, zMin, zMax, criticalPoints, surfaceArea, volume, zeroPlaneY };
+}
+
+// Quick z-range calculation without full geometry generation
+export function calculateZRange(
+  expression: string,
+  xRange: [number, number],
+  yRange: [number, number],
+  resolution: number
+): { zMin: number; zMax: number } | null {
+  try {
+    const evaluate = createEvaluator(expression);
+    const [xMin, xMax] = xRange;
+    const [yMin, yMax] = yRange;
+    const xStep = (xMax - xMin) / resolution;
+    const yStep = (yMax - yMin) / resolution;
+
+    let zMin = Infinity;
+    let zMax = -Infinity;
+
+    for (let i = 0; i <= resolution; i++) {
+      for (let j = 0; j <= resolution; j++) {
+        const x = xMin + i * xStep;
+        const y = yMin + j * yStep;
+        const z = evaluate(x, y);
+
+        if (z !== null) {
+          zMin = Math.min(zMin, z);
+          zMax = Math.max(zMax, z);
+        }
+      }
+    }
+
+    if (!isFinite(zMin) || !isFinite(zMax)) {
+      return null;
+    }
+
+    return { zMin, zMax };
+  } catch {
+    return null;
+  }
 }
