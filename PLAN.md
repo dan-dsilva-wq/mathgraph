@@ -112,11 +112,12 @@ mathgraph/
 - [x] Loading skeleton while Three.js initializes
 
 ### SEO & Discoverability
-- [ ] Add meta descriptions for each page
-- [ ] Create sitemap.xml
-- [ ] Add Open Graph images for social sharing
-- [ ] Add structured data (JSON-LD)
+- [x] Add meta descriptions for each page
+- [x] Create sitemap.xml
+- [x] Add Open Graph tags for social sharing
+- [x] Add structured data (JSON-LD)
 - [ ] Create landing page content explaining the tool
+- [ ] Add Open Graph images (og:image)
 
 ### Quality of Life
 - [ ] Keyboard shortcuts (Enter to graph, Escape to clear)
