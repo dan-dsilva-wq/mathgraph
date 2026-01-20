@@ -9,9 +9,27 @@ export default function Home() {
           <h1 className="text-5xl font-bold text-white mb-4">
             MathGraph
           </h1>
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-            Free online math tools for students. Visualize 3D functions, plot equations, and explore mathematics interactively.
+          <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-4">
+            Free online graphing calculator for students
           </p>
+          <p className="text-lg text-slate-400 max-w-3xl mx-auto">
+            Plot 2D and 3D functions instantly. No downloads, no sign-ups, no fees.
+            Just type your equation and see it visualized in real-time.
+          </p>
+          <div className="flex justify-center gap-4 mt-8">
+            <Link
+              href="/3d-grapher"
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
+            >
+              Try 3D Grapher
+            </Link>
+            <Link
+              href="/2d-grapher"
+              className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg border border-slate-700 transition-colors"
+            >
+              Try 2D Grapher
+            </Link>
+          </div>
         </div>
 
         {/* Tools Grid */}
@@ -27,11 +45,17 @@ export default function Home() {
               </svg>
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">
-              3D Grapher
+              3D Surface Grapher
             </h2>
-            <p className="text-slate-400 text-sm mb-4">
-              Plot 3D surfaces like z = x² + y², sin(x)cos(y), and more. Interactive rotation and zoom.
+            <p className="text-slate-400 text-sm mb-3">
+              Visualize multivariable functions in 3D. Perfect for calculus III and linear algebra.
             </p>
+            <ul className="text-slate-500 text-xs mb-4 space-y-1">
+              <li>Plot up to 6 surfaces simultaneously</li>
+              <li>Auto-detects min/max points</li>
+              <li>Calculates surface area and volume</li>
+              <li>Finds intersection curves</li>
+            </ul>
             <span className="text-blue-400 text-sm font-medium group-hover:text-blue-300 flex items-center gap-1">
               Open Tool
               <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,11 +75,17 @@ export default function Home() {
               </svg>
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">
-              2D Grapher
+              2D Function Grapher
             </h2>
-            <p className="text-slate-400 text-sm mb-4">
-              Plot 2D functions like y = sin(x), quadratics, and more. Pan and zoom interactively.
+            <p className="text-slate-400 text-sm mb-3">
+              Plot any y = f(x) function instantly. Great for algebra, precalc, and calculus.
             </p>
+            <ul className="text-slate-500 text-xs mb-4 space-y-1">
+              <li>Multiple functions with different colors</li>
+              <li>Auto-finds zeros and intersections</li>
+              <li>Snap-to-point hovering</li>
+              <li>Works on mobile with touch gestures</li>
+            </ul>
             <span className="text-green-400 text-sm font-medium group-hover:text-green-300 flex items-center gap-1">
               Open Tool
               <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -101,9 +131,60 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Use Cases */}
+        <div className="mb-16">
+          <h2 className="text-2xl font-semibold text-white mb-2 text-center">Built for Students</h2>
+          <p className="text-slate-400 text-center mb-8 max-w-2xl mx-auto">
+            Whether you&apos;re doing homework, studying for exams, or just exploring math,
+            MathGraph helps you visualize and understand functions.
+          </p>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+              <h3 className="font-semibold text-white mb-3">Calculus</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Visualize derivatives, integrals, and multivariable functions. See how surfaces
+                change as you adjust parameters.
+              </p>
+              <p className="text-slate-500 text-xs">
+                Try: z = sin(x)*cos(y), z = x²+y², z = e^(-x²-y²)
+              </p>
+            </div>
+            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+              <h3 className="font-semibold text-white mb-3">Algebra & Precalculus</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Graph polynomials, exponentials, logarithms, and trig functions.
+                Find zeros and intersection points automatically.
+              </p>
+              <p className="text-slate-500 text-xs">
+                Try: y = x²-4, y = sin(x), y = 2^x, y = log(x)
+              </p>
+            </div>
+            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+              <h3 className="font-semibold text-white mb-3">Homework Help</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Verify your answers visually. Check if your solutions match
+                where functions cross or reach minimum/maximum values.
+              </p>
+              <p className="text-slate-500 text-xs">
+                Share graphs via URL with classmates or tutors
+              </p>
+            </div>
+            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
+              <h3 className="font-semibold text-white mb-3">Exam Prep</h3>
+              <p className="text-slate-400 text-sm mb-3">
+                Build intuition for how different functions behave. Understand
+                concepts like concavity, asymptotes, and inflection points visually.
+              </p>
+              <p className="text-slate-500 text-xs">
+                Download graphs as PNG for notes or flashcards
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Features */}
         <div className="text-center mb-16">
-          <h2 className="text-xl font-semibold text-white mb-8">Why MathGraph?</h2>
+          <h2 className="text-2xl font-semibold text-white mb-8">Why MathGraph?</h2>
           <div className="grid md:grid-cols-3 gap-6">
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
               <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center mx-auto mb-4">
@@ -111,9 +192,9 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-white mb-2">100% Free</h3>
+              <h3 className="font-semibold text-white mb-2">100% Free Forever</h3>
               <p className="text-slate-400 text-sm">
-                No sign-up, no paywalls, no premium features. Everything is free.
+                No accounts, no paywalls, no premium tiers. All features are free for everyone, always.
               </p>
             </div>
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
@@ -124,7 +205,7 @@ export default function Home() {
               </div>
               <h3 className="font-semibold text-white mb-2">Fast & Modern</h3>
               <p className="text-slate-400 text-sm">
-                Built with modern tech. No Java applets or Flash. Works on any device.
+                Built with WebGL and modern JavaScript. No plugins, no Java, no Flash. Works on any device.
               </p>
             </div>
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
@@ -133,17 +214,90 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-white mb-2">Shareable</h3>
+              <h3 className="font-semibold text-white mb-2">Shareable Links</h3>
               <p className="text-slate-400 text-sm">
-                Share your graphs with a link. Great for homework help or teaching.
+                Every graph has a unique URL. Share with classmates, embed in assignments, or save for later.
               </p>
             </div>
           </div>
         </div>
 
+        {/* Example Equations */}
+        <div className="mb-16">
+          <h2 className="text-2xl font-semibold text-white mb-2 text-center">Try These Equations</h2>
+          <p className="text-slate-400 text-center mb-8">
+            Click any example to see it graphed instantly
+          </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+              <h4 className="text-sm font-medium text-blue-400 mb-3">3D Surfaces</h4>
+              <div className="space-y-2">
+                <Link href="/3d-grapher?z=sin(sqrt(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  z = sin(sqrt(x²+y²)) <span className="text-slate-500">- ripple effect</span>
+                </Link>
+                <Link href="/3d-grapher?z=x%5E2-y%5E2" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  z = x² - y² <span className="text-slate-500">- saddle point</span>
+                </Link>
+                <Link href="/3d-grapher?z=e%5E(-(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  z = e^(-(x²+y²)) <span className="text-slate-500">- Gaussian hill</span>
+                </Link>
+                <Link href="/3d-grapher?z=sin(x)*cos(y)" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  z = sin(x)cos(y) <span className="text-slate-500">- wave pattern</span>
+                </Link>
+              </div>
+            </div>
+            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+              <h4 className="text-sm font-medium text-green-400 mb-3">2D Functions</h4>
+              <div className="space-y-2">
+                <Link href="/2d-grapher?y=sin(x)" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  y = sin(x) <span className="text-slate-500">- sine wave</span>
+                </Link>
+                <Link href="/2d-grapher?y=x%5E3-3x" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  y = x³ - 3x <span className="text-slate-500">- cubic with extrema</span>
+                </Link>
+                <Link href="/2d-grapher?y=1%2Fx" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  y = 1/x <span className="text-slate-500">- hyperbola</span>
+                </Link>
+                <Link href="/2d-grapher?y=sqrt(x)" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                  y = sqrt(x) <span className="text-slate-500">- square root</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Supported Functions */}
+        <div className="mb-16 bg-slate-900/30 p-6 rounded-xl border border-slate-800">
+          <h2 className="text-xl font-semibold text-white mb-4 text-center">Supported Functions</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div>
+              <h4 className="text-sm font-medium text-slate-300 mb-2">Basic</h4>
+              <p className="text-xs text-slate-500">+, -, *, /, ^, sqrt</p>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-slate-300 mb-2">Trigonometric</h4>
+              <p className="text-xs text-slate-500">sin, cos, tan, asin, acos, atan</p>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-slate-300 mb-2">Exponential</h4>
+              <p className="text-xs text-slate-500">exp, log, ln, e^x</p>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-slate-300 mb-2">Other</h4>
+              <p className="text-xs text-slate-500">abs, floor, ceil, pi, e</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 text-center mt-4">
+            Implicit multiplication supported: 2x, xy, 3sin(x), and more
+          </p>
+        </div>
+
         {/* Footer */}
-        <footer className="text-center text-sm text-slate-600">
-          <p>Built for students, by someone who gets it.</p>
+        <footer className="text-center border-t border-slate-800 pt-8">
+          <p className="text-slate-400 mb-2">Built for students who need math tools that just work.</p>
+          <p className="text-sm text-slate-600">
+            MathGraph is free and open to everyone. No accounts, no tracking, no nonsense.
+          </p>
         </footer>
       </main>
     </div>

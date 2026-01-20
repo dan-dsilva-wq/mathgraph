@@ -85,11 +85,15 @@ function preprocessExpression(expr: string): string {
 
   // Handle implicit multiplication for constants e and pi
   // Use negative lookahead to avoid matching 'e' in 'exp'
-  // e( -> e*( , ex -> e*x, ey -> e*y
+  // e( -> e*( , ex -> e*x, ey -> e*y, e3 -> e*3, 3e -> 3*e
   result = result.replace(/\be(?!xp)\(/g, 'e*(');
   result = result.replace(/\be(?!xp)([xy])/gi, 'e*$1');
+  result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1'); // e3 -> e*3
+  result = result.replace(/(\d)(e)(?!xp)\b/gi, '$1*$2'); // 3e -> 3*e
   result = result.replace(/\bpi\(/gi, 'pi*(');
   result = result.replace(/\bpi([xy])/gi, 'pi*$1');
+  result = result.replace(/\bpi(\d)/gi, 'pi*$1'); // pi3 -> pi*3
+  result = result.replace(/(\d)(pi)\b/gi, '$1*$2'); // 3pi -> 3*pi
   result = result.replace(/([xy])(e)(?!xp)\b/gi, '$1*$2');
   result = result.replace(/([xy])(pi)\b/gi, '$1*$2');
 
@@ -635,11 +639,118 @@ function solveForYUniversal(exprStr: string): { solved: boolean; solution: strin
 }
 
 /**
+ * Convert LaTeX with nested braces to math expression
+ * Handles \sqrt{...}, \frac{...}{...} with proper brace matching
+ */
+function latexToMath(latex: string): string {
+  let result = latex;
+
+  // Helper to find matching closing brace
+  function findMatchingBrace(str: string, start: number): number {
+    let depth = 1;
+    for (let i = start; i < str.length; i++) {
+      if (str[i] === '{') depth++;
+      else if (str[i] === '}') {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  // Process \sqrt{...} with proper brace matching
+  let sqrtMatch;
+  while ((sqrtMatch = result.match(/\\sqrt\{/)) !== null) {
+    const startIdx = sqrtMatch.index!;
+    const contentStart = startIdx + 6; // After '\sqrt{'
+    const endIdx = findMatchingBrace(result, contentStart);
+    if (endIdx === -1) break;
+
+    const content = result.slice(contentStart, endIdx);
+    result = result.slice(0, startIdx) + 'sqrt(' + content + ')' + result.slice(endIdx + 1);
+  }
+
+  // Process \frac{...}{...} with proper brace matching
+  let fracMatch;
+  while ((fracMatch = result.match(/\\frac\{/)) !== null) {
+    const startIdx = fracMatch.index!;
+    const numStart = startIdx + 6; // After '\frac{'
+    const numEnd = findMatchingBrace(result, numStart);
+    if (numEnd === -1) break;
+
+    const numerator = result.slice(numStart, numEnd);
+
+    // Find denominator - should start with { right after }
+    if (result[numEnd + 1] !== '{') break;
+    const denStart = numEnd + 2;
+    const denEnd = findMatchingBrace(result, denStart);
+    if (denEnd === -1) break;
+
+    const denominator = result.slice(denStart, denEnd);
+    result = result.slice(0, startIdx) + '((' + numerator + ')/(' + denominator + '))' + result.slice(denEnd + 1);
+  }
+
+  // Simple replacements (no nested brace issues)
+  result = result
+    .replace(/\\left\(/g, '(')
+    .replace(/\\right\)/g, ')')
+    .replace(/\\cdot/g, '*')
+    .replace(/\\times/g, '*')
+    .replace(/\\pi/g, 'pi')
+    .replace(/\\ln/g, 'log')
+    .replace(/\\arcsin/g, 'asin')
+    .replace(/\\arccos/g, 'acos')
+    .replace(/\\arctan/g, 'atan')
+    .replace(/\\sin/g, 'sin')
+    .replace(/\\cos/g, 'cos')
+    .replace(/\\tan/g, 'tan')
+    .replace(/\\exp/g, 'exp')
+    .replace(/\\text\{[^}]*\}/g, ''); // Remove \text{...}
+
+  // Convert remaining braces: ^{...} -> ^(...) and {...} -> (...)
+  // Process ^{...} first
+  result = result.replace(/\^\{([^{}]+)\}/g, '^($1)');
+  // Then remaining {...} -> (...)
+  result = result.replace(/\{([^{}]+)\}/g, '($1)');
+
+  // Ensure plain exponents have parentheses
+  result = result.replace(/\^(\d+)/g, '^($1)');
+  result = result.replace(/\^([a-zA-Z])(?![a-zA-Z0-9(])/g, '^($1)');
+
+  return result.trim();
+}
+
+/**
  * Try to solve an expression for y
  * Uses universal AST-based solver
+ * Returns both LaTeX solution and raw math expressions for graphing (positive and negative branches)
  */
-function solveForY(expr: string): { solved: boolean; solution: string; steps: string[] } {
-  return solveForYUniversal(expr);
+function solveForY(expr: string): { solved: boolean; solution: string; rawExpr: string; rawExprNeg: string; hasPlusMinus: boolean; steps: string[] } {
+  const result = solveForYUniversal(expr);
+
+  // Extract raw expression from LaTeX solution
+  let rawExpr = '';
+  let rawExprNeg = '';
+  let hasPlusMinus = false;
+
+  if (result.solved && result.solution) {
+    // Check if the solution has ±
+    hasPlusMinus = result.solution.includes('\\pm');
+
+    // Remove "y = " prefix and ± symbol, then convert LaTeX to math
+    const withoutPrefix = result.solution
+      .replace(/^y\s*=\s*/, '')
+      .replace(/\\pm\s*/g, ''); // Remove ± for positive branch
+
+    rawExpr = latexToMath(withoutPrefix);
+
+    // Create negative branch if there's ±
+    if (hasPlusMinus) {
+      rawExprNeg = '-(' + rawExpr + ')';
+    }
+  }
+
+  return { ...result, rawExpr, rawExprNeg, hasPlusMinus };
 }
 
 /**
@@ -648,6 +759,9 @@ function solveForY(expr: string): { solved: boolean; solution: string; steps: st
  */
 export function generateIntersectionEquation(expr1: string, expr2: string): {
   simplified: string;
+  rawExpression: string; // Raw math expression for 2D graphing (positive branch)
+  rawExpressionNeg: string; // Negative branch for ± solutions
+  hasPlusMinus: boolean; // Whether the solution has ±
   steps: string[];
 } {
   const processed1 = preprocessExpression(expr1);
@@ -677,6 +791,9 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
         steps.push(`0 = 0`);
         return {
           simplified: `\\text{Identical surfaces (intersect everywhere)}`,
+          rawExpression: '',
+          rawExpressionNeg: '',
+          hasPlusMinus: false,
           steps
         };
       } else {
@@ -684,6 +801,9 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
         steps.push(`\\text{This is never true}`);
         return {
           simplified: `\\text{No intersection (parallel surfaces)}`,
+          rawExpression: '',
+          rawExpressionNeg: '',
+          hasPlusMinus: false,
           steps
         };
       }
@@ -699,12 +819,18 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
       steps.push(...solution.steps);
       return {
         simplified: solution.solution,
+        rawExpression: solution.rawExpr,
+        rawExpressionNeg: solution.rawExprNeg,
+        hasPlusMinus: solution.hasPlusMinus,
         steps
       };
     } else {
       // Couldn't solve for y, return simplified form
       return {
         simplified: `${expressionToLatex(simplifiedStr)} = 0`,
+        rawExpression: simplifiedStr, // Use the simplified raw expression
+        rawExpressionNeg: '',
+        hasPlusMinus: false,
         steps
       };
     }
@@ -713,6 +839,9 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
     const originalLatex = `(${expressionToLatex(expr1)}) - (${expressionToLatex(expr2)}) = 0`;
     return {
       simplified: originalLatex,
+      rawExpression: `(${expr1}) - (${expr2})`,
+      rawExpressionNeg: '',
+      hasPlusMinus: false,
       steps: [originalLatex]
     };
   }

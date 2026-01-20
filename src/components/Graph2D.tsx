@@ -21,6 +21,7 @@ interface Graph2DProps {
   xRange: [number, number];
   yRange: [number, number];
   onYRangeChange?: (yMin: number, yMax: number) => void;
+  mini?: boolean; // Hide controls for embedded/mini mode
 }
 
 // Create evaluator for y = f(x)
@@ -53,19 +54,25 @@ function createEvaluator(expression: string): ((x: number) => number | null) {
 
     // Handle implicit multiplication for constants e and pi
     // Use negative lookahead to avoid matching 'e' in 'exp'
-    // e( -> e*( , pi( -> pi*( , ex -> e*x, pix -> pi*x
+    // e( -> e*( , pi( -> pi*( , ex -> e*x, pix -> pi*x, e3 -> e*3, 3e -> 3*e
     processed = processed.replace(/\be(?!xp)\(/g, 'e*(');
     processed = processed.replace(/\be(?!xp)x/gi, 'e*x');
+    processed = processed.replace(/\be(?!xp)(\d)/gi, 'e*$1'); // e3 -> e*3
+    processed = processed.replace(/(\d)(e)(?!xp)\b/gi, '$1*$2'); // 3e -> 3*e
     processed = processed.replace(/\bpi\(/gi, 'pi*(');
     processed = processed.replace(/\bpix/gi, 'pi*x');
+    processed = processed.replace(/\bpi(\d)/gi, 'pi*$1'); // pi3 -> pi*3
+    processed = processed.replace(/(\d)(pi)\b/gi, '$1*$2'); // 3pi -> 3*pi
     processed = processed.replace(/x(e)(?!xp)\b/gi, 'x*$1');
     processed = processed.replace(/x(pi)\b/gi, 'x*$1');
 
     // Handle power operator - convert ^ to **
     processed = processed.replace(/\^/g, '**');
-    // Fix unary minus before exponentiation: -x**2 -> -(x**2)
-    // JavaScript doesn't allow -var** syntax, so we wrap the power in parentheses
+    // Fix unary minus before exponentiation: JavaScript doesn't allow unary minus before **
+    // -x**2 -> -(x**2)
     processed = processed.replace(/-([\w]+)\*\*(\d+|\w+)/g, '-($1**$2)');
+    // -(x)**2 -> -((x)**2) - handle simple parenthesized bases (no nested parens)
+    processed = processed.replace(/-(\([^()]+\))\*\*(\d+|\w+|\([^()]+\))/g, '-($1**$2)');
 
     // Create function using Function constructor
     const fn = new Function('x', `
@@ -88,11 +95,46 @@ function createEvaluator(expression: string): ((x: number) => number | null) {
   }
 }
 
+// Calculate grid steps - minor (finer) and major (coarser with labels)
+function calculateGridSteps(range: number): { minorStep: number; majorStep: number } {
+  const magnitude = Math.pow(10, Math.floor(Math.log10(range)));
+  let minorStep: number;
+  let majorStep: number;
+  const normalized = range / magnitude;
+
+  if (normalized <= 2) {
+    minorStep = magnitude * 0.1;
+    majorStep = magnitude * 0.5;
+  } else if (normalized <= 5) {
+    minorStep = magnitude * 0.2;
+    majorStep = magnitude * 1;
+  } else if (normalized <= 10) {
+    minorStep = magnitude * 0.5;
+    majorStep = magnitude * 2;
+  } else if (normalized <= 20) {
+    minorStep = magnitude * 1;
+    majorStep = magnitude * 5;
+  } else {
+    minorStep = magnitude * 2;
+    majorStep = magnitude * 10;
+  }
+  return { minorStep, majorStep };
+}
+
+// Format number for grid label display
+function formatNumber(n: number): string {
+  if (Math.abs(n) < 0.0001 && n !== 0) return n.toExponential(1);
+  if (Math.abs(n) >= 10000) return n.toExponential(1);
+  const str = n.toPrecision(4);
+  return parseFloat(str).toString();
+}
+
 export default function Graph2D({
   expressions,
   xRange,
   yRange,
   onYRangeChange,
+  mini = false,
 }: Graph2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -327,14 +369,23 @@ export default function Graph2D({
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw grid
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
+    // Calculate grid steps - minor (every integer) and major (every 5)
+    const xRange = localXRange[1] - localXRange[0];
+    const yRange = localYRange[1] - localYRange[0];
 
-    // Vertical grid lines
-    const xStep = calculateGridStep(localXRange[1] - localXRange[0]);
-    const xStart = Math.ceil(localXRange[0] / xStep) * xStep;
-    for (let x = xStart; x <= localXRange[1]; x += xStep) {
+    // Calculate minor step (finer grid) and major step (coarser grid)
+    const { minorStep: xMinorStep, majorStep: xMajorStep } = calculateGridSteps(xRange);
+    const { minorStep: yMinorStep, majorStep: yMajorStep } = calculateGridSteps(yRange);
+
+    // Draw minor grid lines first (lighter)
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 0.5;
+
+    // Minor vertical grid lines
+    const xMinorStart = Math.ceil(localXRange[0] / xMinorStep) * xMinorStep;
+    for (let x = xMinorStart; x <= localXRange[1]; x += xMinorStep) {
+      // Skip if this is a major line (will draw it thicker later)
+      if (Math.abs(x % xMajorStep) < 0.0001 || Math.abs((x % xMajorStep) - xMajorStep) < 0.0001) continue;
       const { screenX } = mathToScreen(x, 0, width, height);
       if (screenX >= padding && screenX <= width - padding) {
         ctx.beginPath();
@@ -344,10 +395,39 @@ export default function Graph2D({
       }
     }
 
-    // Horizontal grid lines
-    const yStep = calculateGridStep(localYRange[1] - localYRange[0]);
-    const yStart = Math.ceil(localYRange[0] / yStep) * yStep;
-    for (let y = yStart; y <= localYRange[1]; y += yStep) {
+    // Minor horizontal grid lines
+    const yMinorStart = Math.ceil(localYRange[0] / yMinorStep) * yMinorStep;
+    for (let y = yMinorStart; y <= localYRange[1]; y += yMinorStep) {
+      // Skip if this is a major line
+      if (Math.abs(y % yMajorStep) < 0.0001 || Math.abs((y % yMajorStep) - yMajorStep) < 0.0001) continue;
+      const { screenY } = mathToScreen(0, y, width, height);
+      if (screenY >= padding && screenY <= height - padding) {
+        ctx.beginPath();
+        ctx.moveTo(padding, screenY);
+        ctx.lineTo(width - padding, screenY);
+        ctx.stroke();
+      }
+    }
+
+    // Draw major grid lines (slightly more visible)
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+
+    // Major vertical grid lines
+    const xMajorStart = Math.ceil(localXRange[0] / xMajorStep) * xMajorStep;
+    for (let x = xMajorStart; x <= localXRange[1]; x += xMajorStep) {
+      const { screenX } = mathToScreen(x, 0, width, height);
+      if (screenX >= padding && screenX <= width - padding) {
+        ctx.beginPath();
+        ctx.moveTo(screenX, padding);
+        ctx.lineTo(screenX, height - padding);
+        ctx.stroke();
+      }
+    }
+
+    // Major horizontal grid lines
+    const yMajorStart = Math.ceil(localYRange[0] / yMajorStep) * yMajorStep;
+    for (let y = yMajorStart; y <= localYRange[1]; y += yMajorStep) {
       const { screenY } = mathToScreen(0, y, width, height);
       if (screenY >= padding && screenY <= height - padding) {
         ctx.beginPath();
@@ -384,17 +464,17 @@ export default function Graph2D({
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
 
-    // X axis labels
-    for (let x = xStart; x <= localXRange[1]; x += xStep) {
+    // X axis labels (at major grid lines)
+    for (let x = xMajorStart; x <= localXRange[1]; x += xMajorStep) {
       const { screenX } = mathToScreen(x, 0, width, height);
       if (screenX >= padding && screenX <= width - padding) {
         ctx.fillText(formatNumber(x), screenX, height - padding + 15);
       }
     }
 
-    // Y axis labels
+    // Y axis labels (at major grid lines)
     ctx.textAlign = 'right';
-    for (let y = yStart; y <= localYRange[1]; y += yStep) {
+    for (let y = yMajorStart; y <= localYRange[1]; y += yMajorStep) {
       const { screenY } = mathToScreen(0, y, width, height);
       if (screenY >= padding && screenY <= height - padding) {
         ctx.fillText(formatNumber(y), padding - 8, screenY + 4);
@@ -539,30 +619,6 @@ export default function Graph2D({
 
   }, [expressions, localXRange, localYRange, mathToScreen, clipLine, hoverPoint, interestPoints]);
 
-  // Calculate nice grid step
-  function calculateGridStep(range: number): number {
-    const targetSteps = 8;
-    const rawStep = range / targetSteps;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
-    const normalized = rawStep / magnitude;
-
-    let step;
-    if (normalized <= 1) step = 1;
-    else if (normalized <= 2) step = 2;
-    else if (normalized <= 5) step = 5;
-    else step = 10;
-
-    return step * magnitude;
-  }
-
-  // Format number for display
-  function formatNumber(n: number): string {
-    if (Math.abs(n) < 0.0001 && n !== 0) return n.toExponential(1);
-    if (Math.abs(n) >= 10000) return n.toExponential(1);
-    if (Number.isInteger(n)) return n.toString();
-    return n.toFixed(2);
-  }
-
   // Handle mouse move for hover
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -619,6 +675,94 @@ export default function Graph2D({
         label: interest.label,
       });
       return;
+    }
+
+    // Check for axis snapping (y-intercept at x=0, x-intercept at y=0)
+    const axisSnapRadius = 40; // pixels
+    const { screenX: yAxisScreenX } = mathToScreen(0, 0, rect.width, rect.height);
+    const { screenY: xAxisScreenY } = mathToScreen(0, 0, rect.width, rect.height);
+
+    // Check if near y-axis (x=0) for y-intercept snapping
+    if (Math.abs(screenX - yAxisScreenX) < axisSnapRadius && localXRange[0] <= 0 && localXRange[1] >= 0) {
+      let closestYIntercept: typeof hoverPoint = null;
+      let closestYInterceptDist = Infinity;
+
+      expressions.filter(e => e.expression.trim()).forEach(({ expression, originalIndex }) => {
+        const evaluator = createEvaluator(expression);
+        const yIntercept = evaluator(0);
+
+        if (yIntercept !== null && yIntercept >= localYRange[0] && yIntercept <= localYRange[1]) {
+          const { screenY: interceptScreenY } = mathToScreen(0, yIntercept, rect.width, rect.height);
+          const dist = Math.abs(interceptScreenY - screenY);
+
+          if (dist < axisSnapRadius && dist < closestYInterceptDist) {
+            closestYInterceptDist = dist;
+            closestYIntercept = {
+              x: 0,
+              y: yIntercept,
+              screenX,
+              screenY,
+              exprIndex: originalIndex,
+              label: `Y-intercept: (0, ${yIntercept.toFixed(2)})`,
+            };
+          }
+        }
+      });
+
+      if (closestYIntercept) {
+        setHoverPoint(closestYIntercept);
+        return;
+      }
+    }
+
+    // Check if near x-axis (y=0) for x-intercept snapping (supplements zero detection)
+    if (Math.abs(screenY - xAxisScreenY) < axisSnapRadius && localYRange[0] <= 0 && localYRange[1] >= 0) {
+      let closestXIntercept: typeof hoverPoint = null;
+      let closestXInterceptDist = Infinity;
+
+      expressions.filter(e => e.expression.trim()).forEach(({ expression, originalIndex }) => {
+        const evaluator = createEvaluator(expression);
+        // Binary search for zero near mouseX
+        const searchRange = (localXRange[1] - localXRange[0]) * 0.1; // 10% of visible range
+        const y1 = evaluator(mouseX - searchRange / 2);
+        const y2 = evaluator(mouseX + searchRange / 2);
+
+        if (y1 !== null && y2 !== null && y1 * y2 < 0) {
+          // Zero crossing exists - binary search
+          let lo = mouseX - searchRange / 2;
+          let hi = mouseX + searchRange / 2;
+          for (let i = 0; i < 20; i++) {
+            const mid = (lo + hi) / 2;
+            const midY = evaluator(mid);
+            if (midY === null) break;
+            if ((y1 > 0 && midY > 0) || (y1 < 0 && midY < 0)) {
+              lo = mid;
+            } else {
+              hi = mid;
+            }
+          }
+          const zeroX = (lo + hi) / 2;
+          const { screenX: zeroScreenX } = mathToScreen(zeroX, 0, rect.width, rect.height);
+          const dist = Math.abs(zeroScreenX - screenX);
+
+          if (dist < axisSnapRadius && dist < closestXInterceptDist) {
+            closestXInterceptDist = dist;
+            closestXIntercept = {
+              x: zeroX,
+              y: 0,
+              screenX,
+              screenY,
+              exprIndex: originalIndex,
+              label: `X-intercept: (${zeroX.toFixed(2)}, 0)`,
+            };
+          }
+        }
+      });
+
+      if (closestXIntercept) {
+        setHoverPoint(closestXIntercept);
+        return;
+      }
     }
 
     // Find closest point on any function
@@ -699,6 +843,110 @@ export default function Graph2D({
     setDragStart(null);
   }, []);
 
+  // Touch state for pinch-to-zoom
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
+
+  // Touch start handler
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+
+    if (e.touches.length === 1) {
+      // Single touch - start panning
+      setIsDragging(true);
+      setDragStart({
+        x: e.touches[0].clientX - rect.left,
+        y: e.touches[0].clientY - rect.top
+      });
+    } else if (e.touches.length === 2) {
+      // Two touches - prepare for pinch zoom
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.sqrt(
+        (touch2.clientX - touch1.clientX) ** 2 +
+        (touch2.clientY - touch1.clientY) ** 2
+      );
+      lastTouchDistance.current = distance;
+      lastTouchCenter.current = {
+        x: (touch1.clientX + touch2.clientX) / 2 - rect.left,
+        y: (touch1.clientY + touch2.clientY) / 2 - rect.top
+      };
+      setIsDragging(false);
+    }
+  }, []);
+
+  // Touch move handler
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+
+    if (e.touches.length === 1 && isDragging && dragStart) {
+      // Single touch - pan
+      const touch = e.touches[0];
+      const screenX = touch.clientX - rect.left;
+      const screenY = touch.clientY - rect.top;
+
+      const dx = screenX - dragStart.x;
+      const dy = screenY - dragStart.y;
+
+      const padding = 50;
+      const plotWidth = rect.width - padding * 2;
+      const plotHeight = rect.height - padding * 2;
+
+      const xDelta = -dx / plotWidth * (localXRange[1] - localXRange[0]);
+      const yDelta = dy / plotHeight * (localYRange[1] - localYRange[0]);
+
+      setLocalXRange([localXRange[0] + xDelta, localXRange[1] + xDelta]);
+      setLocalYRange([localYRange[0] + yDelta, localYRange[1] + yDelta]);
+      setDragStart({ x: screenX, y: screenY });
+    } else if (e.touches.length === 2 && lastTouchDistance.current && lastTouchCenter.current) {
+      // Two touches - pinch zoom
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const newDistance = Math.sqrt(
+        (touch2.clientX - touch1.clientX) ** 2 +
+        (touch2.clientY - touch1.clientY) ** 2
+      );
+
+      const scale = lastTouchDistance.current / newDistance;
+      const centerX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+      const centerY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+
+      const { x: mathCenterX, y: mathCenterY } = screenToMath(centerX, centerY, rect.width, rect.height);
+
+      const newXRange: [number, number] = [
+        mathCenterX - (mathCenterX - localXRange[0]) * scale,
+        mathCenterX + (localXRange[1] - mathCenterX) * scale,
+      ];
+
+      const newYRange: [number, number] = [
+        mathCenterY - (mathCenterY - localYRange[0]) * scale,
+        mathCenterY + (localYRange[1] - mathCenterY) * scale,
+      ];
+
+      setLocalXRange(newXRange);
+      setLocalYRange(newYRange);
+      onYRangeChange?.(newYRange[0], newYRange[1]);
+
+      lastTouchDistance.current = newDistance;
+      lastTouchCenter.current = { x: centerX, y: centerY };
+    }
+  }, [isDragging, dragStart, localXRange, localYRange, screenToMath, onYRangeChange]);
+
+  // Touch end handler
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+    setDragStart(null);
+    lastTouchDistance.current = null;
+    lastTouchCenter.current = null;
+  }, []);
+
   // Download as PNG
   const downloadPNG = useCallback(() => {
     const canvas = canvasRef.current;
@@ -732,18 +980,22 @@ export default function Graph2D({
     <div ref={containerRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        className="w-full h-full cursor-crosshair"
-        onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
+        className={`w-full h-full ${mini ? 'cursor-default' : 'cursor-crosshair'} touch-none`}
+        onMouseMove={mini ? undefined : handleMouseMove}
+        onMouseDown={mini ? undefined : handleMouseDown}
+        onMouseUp={mini ? undefined : handleMouseUp}
+        onMouseLeave={mini ? undefined : handleMouseLeave}
+        onWheel={mini ? undefined : handleWheel}
+        onTouchStart={mini ? undefined : handleTouchStart}
+        onTouchMove={mini ? undefined : handleTouchMove}
+        onTouchEnd={mini ? undefined : handleTouchEnd}
+        onTouchCancel={mini ? undefined : handleTouchEnd}
       />
-      {hoverPoint && (
+      {!mini && hoverPoint && (
         <div
           className="absolute pointer-events-none bg-black/80 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/20"
           style={{
-            left: Math.min(hoverPoint.screenX + 15, (containerRef.current?.clientWidth || 300) - 180),
+            left: `min(${hoverPoint.screenX + 15}px, calc(100% - 180px))`,
             top: hoverPoint.screenY - 10,
           }}
         >
@@ -756,29 +1008,31 @@ export default function Graph2D({
           <div><span className="text-green-400">y:</span> {hoverPoint.y.toFixed(4)}</div>
         </div>
       )}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2">
-        <button
-          onClick={resetView}
-          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Reset View
-        </button>
-        <button
-          onClick={downloadPNG}
-          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          Download PNG
-        </button>
-        <span className="text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
-          Drag to pan &bull; Scroll to zoom
-        </span>
-      </div>
+      {!mini && (
+        <div className="absolute bottom-4 left-4 flex items-center gap-2">
+          <button
+            onClick={resetView}
+            className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Reset View
+          </button>
+          <button
+            onClick={downloadPNG}
+            className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download PNG
+          </button>
+          <span className="text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+            Drag to pan &bull; Scroll to zoom
+          </span>
+        </div>
+      )}
     </div>
   );
 }

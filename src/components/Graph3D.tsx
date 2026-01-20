@@ -21,6 +21,7 @@ interface Graph3DProps {
   xRange: [number, number];
   yRange: [number, number];
   resolution?: number;
+  showSurfaceGrid?: boolean;
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
     surfaceAreas: SurfaceStats[];
@@ -35,6 +36,7 @@ export default function Graph3D({
   xRange,
   yRange,
   resolution = 60,
+  showSurfaceGrid = false,
   onZRangeChange,
   onStatsChange,
 }: Graph3DProps) {
@@ -515,15 +517,28 @@ export default function Graph3D({
           surfaceMesh.receiveShadow = true;
           surfaceGroup.add(surfaceMesh);
 
-          // Add wireframe overlay for better shape definition
-          const wireframeGeometry = new THREE.WireframeGeometry(geometry);
-          const wireframeMaterial = new THREE.LineBasicMaterial({
-            color: 0x000000,
-            opacity: 0.06,
-            transparent: true,
-          });
-          const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
-          surfaceGroup.add(wireframe);
+          // Add wireframe/grid overlay for better shape definition
+          if (showSurfaceGrid) {
+            // More visible grid lines when enabled
+            const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+            const wireframeMaterial = new THREE.LineBasicMaterial({
+              color: 0x000000,
+              opacity: 0.25,
+              transparent: true,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            surfaceGroup.add(wireframe);
+          } else {
+            // Subtle wireframe when disabled
+            const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+            const wireframeMaterial = new THREE.LineBasicMaterial({
+              color: 0x000000,
+              opacity: 0.06,
+              transparent: true,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            surfaceGroup.add(wireframe);
+          }
         } catch (err) {
           // Skip invalid expressions but continue with others
           console.warn(`Failed to render expression "${expression}":`, err);
@@ -606,7 +621,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, resolution, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, resolution, showSurfaceGrid, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">

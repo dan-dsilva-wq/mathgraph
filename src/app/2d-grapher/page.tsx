@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Graph2D from '@/components/Graph2D';
 import { getFunctionColor } from '@/lib/graphing/colors';
-import { validateExpression } from '@/lib/mathParser';
+import { validateExpression, expressionToLatex } from '@/lib/mathParser';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -28,7 +28,20 @@ function validate2DExpression(expr: string): { valid: boolean; error?: string } 
     return { valid: false, error: 'Use x only (2D mode)' };
   }
 
-  return validateExpression(expr.replace(/y/gi, 'x')); // Validate treating as single var
+  // Handle +- or ± prefix - validate the base expression
+  const cleanExpr = expr.replace(/^[±]|^\+-/, '');
+  return validateExpression(cleanExpr.replace(/y/gi, 'x')); // Validate treating as single var
+}
+
+// Expand +- or ± expressions into positive and negative versions
+function expandPlusMinusExpr(expr: string): string[] {
+  const trimmed = expr.trim();
+  // Check for +- or ± at the start
+  if (trimmed.startsWith('+-') || trimmed.startsWith('±')) {
+    const baseExpr = trimmed.replace(/^[±]|^\+-/, '');
+    return [baseExpr, '-(' + baseExpr + ')'];
+  }
+  return [expr];
 }
 
 function Graph2DPage() {
@@ -48,22 +61,72 @@ function Graph2DPage() {
   );
   const [xRange, setXRange] = useState<[number, number]>(urlXRange || [-10, 10]);
   const [yRange, setYRange] = useState<[number, number]>(urlYRange || [-10, 10]);
-  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
+  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showHistory, setShowHistory] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load history from localStorage
+  // Keyboard shortcuts
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_KEY);
-      if (stored) {
-        setRecentEquations(JSON.parse(stored));
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+      if (e.key === 'Escape') {
+        if (isFullscreen) {
+          // Exit fullscreen first
+          setIsFullscreen(false);
+        } else {
+          // Clear all expressions
+          setExpressions(['']);
+          setActiveExpressions([]);
+          // Blur any focused input
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+        }
+      } else if (e.key === 'f' && !isInput) {
+        // Toggle fullscreen
+        setIsFullscreen(prev => !prev);
+      } else if (e.key === 'Enter' && isInput) {
+        // Force immediate graph update (skip debounce)
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+        }
+        const validExpressions: { expression: string; originalIndex: number }[] = [];
+        expressions.forEach((expr, index) => {
+          if (expr.trim()) {
+            const validation = validate2DExpression(expr);
+            if (validation.valid) {
+              const expanded = expandPlusMinusExpr(expr);
+              expanded.forEach((expandedExpr, subIndex) => {
+                validExpressions.push({
+                  expression: expandedExpr,
+                  originalIndex: expanded.length > 1 ? index * 2 + subIndex : index
+                });
+              });
+            }
+          }
+        });
+        if (validExpressions.length > 0) {
+          setActiveExpressions(validExpressions);
+        }
       }
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [expressions, isFullscreen]);
 
   // Save to history
   const saveToHistory = useCallback((exprs: string[]) => {
@@ -120,7 +183,14 @@ function Graph2DPage() {
         if (expr.trim()) {
           const validation = validate2DExpression(expr);
           if (validation.valid) {
-            validExpressions.push({ expression: expr, originalIndex: index });
+            // Expand +- expressions into positive and negative versions
+            const expanded = expandPlusMinusExpr(expr);
+            expanded.forEach((expandedExpr, subIndex) => {
+              validExpressions.push({
+                expression: expandedExpr,
+                originalIndex: expanded.length > 1 ? index * 2 + subIndex : index
+              });
+            });
           }
         }
       });
@@ -180,13 +250,6 @@ function Graph2DPage() {
     }
   };
 
-  // Auto-graph on initial load if URL has expressions
-  useEffect(() => {
-    if (urlExpressions.length > 0) {
-      setActiveExpressions(urlExpressions.map((e, i) => ({ expression: e, originalIndex: i })));
-    }
-  }, []);
-
   // Example equations for 2D
   const examples = [
     { name: 'Sine Wave', expr: 'sin(x)' },
@@ -216,7 +279,7 @@ function Graph2DPage() {
       {/* Main content */}
       <div className="flex-1 flex min-h-0">
         {/* Left Panel - Controls */}
-        <div className="w-80 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto">
+        <div className={`${isFullscreen ? 'hidden' : 'w-80'} flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto transition-all`}>
           {/* Multi-Equation Input */}
           <div className="p-4 border-b border-slate-800">
             <div className="flex items-center justify-between mb-3">
@@ -288,7 +351,7 @@ function Graph2DPage() {
                       className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: getFunctionColor(originalIndex) }}
                     />
-                    <InlineMath math={`y = ${expression.replace(/\*/g, '\\cdot ')}`} />
+                    <InlineMath math={`y = ${expressionToLatex(expression)}`} />
                   </div>
                 ))}
               </div>
@@ -427,14 +490,17 @@ function Graph2DPage() {
 
           {/* Tips */}
           <div className="mt-auto p-4 border-t border-slate-800">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 mb-2">
               Plot multiple functions to compare. Use notation like x^2, sin(x), exp(-x), sqrt(x)
+            </p>
+            <p className="text-xs text-slate-600">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Enter</kbd> graph &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Esc</kbd> clear &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">F</kbd> fullscreen
             </p>
           </div>
         </div>
 
         {/* Right Panel - Graph */}
-        <div className="flex-1 p-4 min-w-0">
+        <div className="flex-1 p-4 min-w-0 relative">
           <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl bg-slate-900">
             <Graph2D
               expressions={activeExpressions}
@@ -443,6 +509,22 @@ function Graph2DPage() {
               onYRangeChange={handleYRangeChange}
             />
           </div>
+          {/* Fullscreen toggle button */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="absolute top-6 right-6 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border border-slate-700/50"
+            title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+          >
+            {isFullscreen ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </div>

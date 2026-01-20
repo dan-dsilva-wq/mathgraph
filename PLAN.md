@@ -97,18 +97,18 @@ mathgraph/
 
 ---
 
-## Phase 3: Polish & SEO [TODO]
+## Phase 3: Polish & SEO [COMPLETED]
 
 ### Visual Improvements
 - [x] Add axis labels (X, Y, Z text labels)
 - [x] Fixed triangle winding for consistent shading
 - [x] Arrow heads on axes for direction
 - [x] Dynamic grid/axes that scale with range
-- [ ] Add grid lines on the surface (optional toggle)
+- [x] Add grid lines on the surface (optional toggle)
 - [x] Add "reset view" button to restore default camera position
 - [x] Removed zoom limits - can zoom freely in/out
 - [x] Auto-reset camera when ranges change
-- [ ] Mobile touch controls optimization
+- [x] Mobile touch controls optimization (pinch-to-zoom, touch pan)
 - [x] Loading skeleton while Three.js initializes
 
 ### SEO & Discoverability
@@ -116,14 +116,14 @@ mathgraph/
 - [x] Create sitemap.xml
 - [x] Add Open Graph tags for social sharing
 - [x] Add structured data (JSON-LD)
-- [ ] Create landing page content explaining the tool
-- [ ] Add Open Graph images (og:image)
+- [x] Create landing page content explaining the tool
+- [x] Add Open Graph images (og:image) - dynamic OG images for all pages
 
 ### Quality of Life
-- [ ] Keyboard shortcuts (Enter to graph, Escape to clear)
+- [x] Keyboard shortcuts (Enter to graph instantly, Escape to clear, F for fullscreen)
 - [x] Recent equations history (localStorage)
 - [x] Download graph as PNG image
-- [ ] Fullscreen mode toggle
+- [x] Fullscreen mode toggle (hides sidebar for full graph view)
 
 ---
 
@@ -199,7 +199,7 @@ mathgraph/
 - [ ] Ensure ads don't interfere with tool UX
 
 ### Analytics
-- [ ] Set up Google Analytics or Plausible
+- [x] Set up Google Analytics (configurable via NEXT_PUBLIC_GA_MEASUREMENT_ID)
 - [ ] Track popular equations
 - [ ] Monitor user engagement
 
@@ -219,6 +219,44 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2026-01-20 (Session 4 - Launch Prep)
+- **Google Analytics setup** - Added GoogleAnalytics component with environment variable configuration
+- **Lint fixes** - Fixed ESLint errors (moved functions outside component, removed redundant useEffects)
+- **Build verification** - All pages build successfully with TypeScript checks passing
+- **Environment example** - Added .env.example with GA configuration instructions
+
+### 2026-01-20 (Session 3 - Phase 3 Complete)
+- **Phase 3: Polish & SEO completed**:
+  - **3D Surface Grid Lines** - Optional toggle to show wireframe grid on surfaces
+  - **Mobile Touch Controls** - Pinch-to-zoom and touch pan for 2D grapher on mobile devices
+  - **Landing Page** - Enhanced with use cases, example equations, feature descriptions, and supported functions
+  - **Open Graph Images** - Dynamic OG images generated for homepage, 2D grapher, and 3D grapher
+  - **Twitter Card Images** - Matching Twitter cards for social sharing
+  - **Keyboard Shortcuts**:
+    - `Enter` - Graph instantly (skip debounce)
+    - `Escape` - Clear expressions (or exit fullscreen)
+    - `F` - Toggle fullscreen mode
+  - **Fullscreen Mode** - Hide sidebar to expand graph to full viewport; button + keyboard shortcut
+
+### 2026-01-20 (Session 2)
+- **3D Grapher intersection improvements**:
+  - **Mini 2D preview** - Shows intersection equation as 2D graph in sidebar
+  - **Both ± branches graphed** - When intersection has ±sqrt, shows both positive and negative curves
+  - **Open in 2D Grapher link** - Click to open intersection in full 2D grapher with both branches
+  - **Collapsible calculations** - Accordion-style UI for Surface Area, Volume, Intersection sections
+  - **Dark scrollbars** - Custom styled scrollbars matching dark theme
+  - **Taller mini preview** - Increased from h-32 to h-48 for better visibility
+- **Expression parsing fixes**:
+  - **`e3x` implicit multiplication** - `e3x` → `e*3*x`, `3e` → `3*e`, same for `pi`
+  - **Nested parentheses in LaTeX** - Fixed `\sqrt{...}` conversion for expressions with nested braces
+  - **`-(sqrt(...))` fix** - Regex now correctly handles nested parentheses without breaking
+- **2D Grapher enhancements**:
+  - **`+-` input support** - Type `+-sqrt(x)` or `±sqrt(x)` to graph both branches
+  - **Proper LaTeX display** - Expression preview now uses `expressionToLatex()` for correct formatting
+  - **Axis snapping** - Snaps to y-intercepts (x=0) and x-intercepts (y=0) when hovering near axes
+  - **Tiered grid system** - Minor lines (lighter/thinner) and major lines (thicker) with labels
+  - **Adaptive grid scaling** - Grid density adjusts based on zoom level (shows 1,2,3... at default zoom)
 
 ### 2026-01-20
 - **2D Grapher major fixes**:

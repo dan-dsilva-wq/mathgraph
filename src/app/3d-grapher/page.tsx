@@ -115,22 +115,67 @@ function Graph3DPage() {
   const [showVolumeWorking, setShowVolumeWorking] = useState(false);
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
-  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
+  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showHistory, setShowHistory] = useState(false);
+  const [showSurfaceGrid, setShowSurfaceGrid] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load history from localStorage on mount
+  // Keyboard shortcuts
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_KEY);
-      if (stored) {
-        setRecentEquations(JSON.parse(stored));
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+      if (e.key === 'Escape') {
+        if (isFullscreen) {
+          // Exit fullscreen first
+          setIsFullscreen(false);
+        } else {
+          // Clear all expressions
+          setExpressions(['']);
+          setActiveExpressions([]);
+          // Blur any focused input
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+        }
+      } else if (e.key === 'f' && !isInput) {
+        // Toggle fullscreen
+        setIsFullscreen(prev => !prev);
+      } else if (e.key === 'Enter' && isInput) {
+        // Force immediate graph update (skip debounce)
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+        }
+        const validExpressions: { expression: string; originalIndex: number }[] = [];
+        expressions.forEach((expr, index) => {
+          if (expr.trim()) {
+            const validation = validateExpression(expr);
+            if (validation.valid) {
+              validExpressions.push({ expression: expr, originalIndex: index });
+            }
+          }
+        });
+        if (validExpressions.length > 0) {
+          setActiveExpressions(validExpressions);
+        }
       }
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [expressions, isFullscreen]);
 
   // Save to history when expressions change (debounced)
   const saveToHistory = useCallback((exprs: string[]) => {
@@ -334,7 +379,7 @@ function Graph3DPage() {
       {/* Main content - fixed height, no scroll */}
       <div className="flex-1 flex min-h-0">
         {/* Left Panel - Controls */}
-        <div className="w-80 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto">
+        <div className={`${isFullscreen ? 'hidden' : 'w-80'} flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto transition-all`}>
           {/* Multi-Equation Input */}
           <div className="p-4 border-b border-slate-800">
             <div className="flex items-center justify-between mb-3">
@@ -567,11 +612,10 @@ function Graph3DPage() {
               {/* Intersection Equation Section */}
               {activeExpressions.length >= 2 && (() => {
                 const intersection = generateIntersectionEquation(activeExpressions[0].expression, activeExpressions[1].expression);
-                // Extract y = ... form for 2D graphing
-                const intersectionExpr = intersection.simplified.replace(/^y\s*=\s*/, '').replace(/\\pm/g, '');
-                const hasValidIntersection = !intersection.simplified.includes('No intersection') &&
-                                             !intersection.simplified.includes('=') ||
-                                             intersection.simplified.startsWith('y');
+                const hasValidIntersection = intersection.rawExpression &&
+                                             intersection.rawExpression.trim() !== '' &&
+                                             !intersection.simplified.includes('No intersection') &&
+                                             !intersection.simplified.includes('Identical');
 
                 return (
                   <CollapsibleSection
@@ -586,18 +630,32 @@ function Graph3DPage() {
                       </div>
 
                       {/* Mini 2D Graph Preview */}
-                      {hasValidIntersection && intersectionExpr && !intersectionExpr.includes('No intersection') && (
+                      {hasValidIntersection && (
                         <div className="mt-2">
-                          <div className="text-[10px] text-slate-500 mb-1">2D Preview (y vs x):</div>
-                          <div className="h-32 bg-slate-900 rounded overflow-hidden border border-slate-700">
+                          <div className="text-[10px] text-slate-500 mb-1">
+                            2D Preview (y vs x){intersection.hasPlusMinus && ' - both ± branches'}:
+                          </div>
+                          <div className="h-48 bg-slate-900 rounded overflow-hidden border border-slate-700">
                             <Graph2D
-                              expressions={[{ expression: intersectionExpr, originalIndex: 0 }]}
+                              expressions={
+                                intersection.hasPlusMinus && intersection.rawExpressionNeg
+                                  ? [
+                                      { expression: intersection.rawExpression, originalIndex: 0 },
+                                      { expression: intersection.rawExpressionNeg, originalIndex: 1 }
+                                    ]
+                                  : [{ expression: intersection.rawExpression, originalIndex: 0 }]
+                              }
                               xRange={xRange}
                               yRange={[-10, 10]}
+                              mini={true}
                             />
                           </div>
                           <Link
-                            href={`/2d-grapher?eq=${encodeURIComponent(intersectionExpr)}&xr=${xRange[0]},${xRange[1]}`}
+                            href={`/2d-grapher?eq=${encodeURIComponent(
+                              intersection.hasPlusMinus && intersection.rawExpressionNeg
+                                ? intersection.rawExpression + '|' + intersection.rawExpressionNeg
+                                : intersection.rawExpression
+                            )}&xr=${xRange[0]},${xRange[1]}`}
                             target="_blank"
                             className="mt-2 flex items-center justify-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
                           >
@@ -647,6 +705,20 @@ function Graph3DPage() {
             <p className="text-sm text-slate-300 font-mono">
               {zRange[0].toFixed(2)} to {zRange[1].toFixed(2)}
             </p>
+          </div>
+
+          {/* Display Options */}
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Display Options</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showSurfaceGrid}
+                onChange={(e) => setShowSurfaceGrid(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+              />
+              <span className="text-sm text-slate-300">Show surface grid lines</span>
+            </label>
           </div>
 
           {/* Share */}
@@ -709,24 +781,44 @@ function Graph3DPage() {
 
           {/* Tips - pushed to bottom */}
           <div className="mt-auto p-4 border-t border-slate-800">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 mb-2">
               Add multiple functions to see intersections. Use notation like x^2, sin(x), cos(y), exp(-x^2)
+            </p>
+            <p className="text-xs text-slate-600">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Enter</kbd> graph &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Esc</kbd> clear &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">F</kbd> fullscreen
             </p>
           </div>
         </div>
 
         {/* Right Panel - Graph */}
-        <div className="flex-1 p-4 min-w-0">
+        <div className="flex-1 p-4 min-w-0 relative">
           <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl">
             <Graph3D
               expressions={activeExpressions}
               xRange={xRange}
               yRange={yRange}
               resolution={60}
+              showSurfaceGrid={showSurfaceGrid}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />
           </div>
+          {/* Fullscreen toggle button */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="absolute top-6 right-6 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border border-slate-700/50"
+            title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+          >
+            {isFullscreen ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </div>
