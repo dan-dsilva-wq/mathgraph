@@ -20,6 +20,61 @@ const Graph3D = dynamic(() => import('@/components/Graph3D'), {
   ),
 });
 
+// Dynamically import Graph2D for mini intersection preview
+const Graph2D = dynamic(() => import('@/components/Graph2D'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-slate-800 rounded">
+      <div className="text-slate-500 text-xs">Loading...</div>
+    </div>
+  ),
+});
+
+// Collapsible section component
+function CollapsibleSection({
+  title,
+  icon,
+  children,
+  defaultOpen = false,
+  badge
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="border-b border-slate-700/50 last:border-b-0">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3 hover:bg-slate-800/30 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="text-sm text-slate-300">{title}</span>
+          {badge}
+        </div>
+        <svg
+          className={`w-4 h-4 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="px-3 pb-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MAX_FUNCTIONS = 6;
 const DEBOUNCE_MS = 300; // Update graph 300ms after typing stops
 const MAX_HISTORY = 10;
@@ -341,117 +396,117 @@ function Graph3DPage() {
             </div>
           </div>
 
-          {/* Calculations */}
-          <div className="p-4 border-b border-slate-800">
-            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Calculations</h3>
-            <div className="space-y-3 text-sm">
-              {/* Global Minimum */}
-              <div className="bg-slate-800/50 rounded-lg p-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-red-400">▼</span>
-                  <span className="text-slate-300 font-medium">Global Minimum</span>
-                </div>
-                {stats.globalMin ? (
-                  <div className="text-slate-400 font-mono text-xs pl-5">
-                    ({stats.globalMin.x.toFixed(3)}, {stats.globalMin.y.toFixed(3)}, {stats.globalMin.z.toFixed(3)})
+          {/* Calculations - Collapsible Sections */}
+          <div className="border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide px-4 pt-4 pb-2">Calculations</h3>
+            <div className="bg-slate-800/30 rounded-lg mx-3 mb-3 overflow-hidden">
+              {/* Extrema Section */}
+              <CollapsibleSection
+                title="Extrema"
+                icon={<span className="text-xs">📊</span>}
+                badge={
+                  stats.globalMin || stats.globalMax ? (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">
+                      {stats.globalMin && stats.globalMax ? '2' : '1'}
+                    </span>
+                  ) : null
+                }
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-400 text-xs">▼</span>
+                      <span className="text-xs text-slate-400">Min</span>
+                    </div>
+                    {stats.globalMin ? (
+                      <span className="text-xs font-mono text-slate-300">
+                        ({stats.globalMin.x.toFixed(2)}, {stats.globalMin.y.toFixed(2)}, {stats.globalMin.z.toFixed(2)})
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500">—</span>
+                    )}
                   </div>
-                ) : (
-                  <div className="text-slate-500 text-xs pl-5">No data</div>
-                )}
-              </div>
-
-              {/* Global Maximum */}
-              <div className="bg-slate-800/50 rounded-lg p-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-green-400">▲</span>
-                  <span className="text-slate-300 font-medium">Global Maximum</span>
-                </div>
-                {stats.globalMax ? (
-                  <div className="text-slate-400 font-mono text-xs pl-5">
-                    ({stats.globalMax.x.toFixed(3)}, {stats.globalMax.y.toFixed(3)}, {stats.globalMax.z.toFixed(3)})
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-400 text-xs">▲</span>
+                      <span className="text-xs text-slate-400">Max</span>
+                    </div>
+                    {stats.globalMax ? (
+                      <span className="text-xs font-mono text-slate-300">
+                        ({stats.globalMax.x.toFixed(2)}, {stats.globalMax.y.toFixed(2)}, {stats.globalMax.z.toFixed(2)})
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500">—</span>
+                    )}
                   </div>
-                ) : (
-                  <div className="text-slate-500 text-xs pl-5">No data</div>
-                )}
-              </div>
-
-              {/* Surface Area */}
-              <div className="bg-slate-800/50 rounded-lg p-2">
-                <div className="text-slate-300 font-medium mb-1">Surface Area</div>
-                <div className="text-slate-400 text-xs mb-1">
-                  <InlineMath math="A = \iint_D \sqrt{1 + \left(\frac{\partial z}{\partial x}\right)^2 + \left(\frac{\partial z}{\partial y}\right)^2} \, dA" />
                 </div>
+              </CollapsibleSection>
 
+              {/* Surface Area Section */}
+              <CollapsibleSection
+                title="Surface Area"
+                icon={<span className="text-xs">📐</span>}
+                badge={
+                  stats.surfaceAreas.length > 0 ? (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">
+                      {stats.surfaceAreas.length}
+                    </span>
+                  ) : null
+                }
+              >
                 {stats.surfaceAreas.length > 0 ? (
-                  <div className="space-y-2 mt-2">
+                  <div className="space-y-2">
                     {stats.surfaceAreas.map((surface, idx) => {
                       const derivs = getPartialDerivatives(surface.expression);
                       return (
-                        <div key={idx} className="border-l-2 border-slate-700 pl-2">
-                          <div className="flex items-center gap-2 mb-1">
+                        <div key={idx} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
                             <div
                               className="w-2 h-2 rounded-full flex-shrink-0"
                               style={{ backgroundColor: getFunctionColor(surface.originalIndex) }}
                             />
-                            <span className="text-slate-400 text-xs">z = {surface.expression}</span>
+                            <span className="text-xs text-slate-400 truncate max-w-[100px]">
+                              {surface.expression}
+                            </span>
                           </div>
-                          <div className="text-white font-mono text-sm">
-                            A = {surface.surfaceArea.toFixed(4)} units²
-                          </div>
-
-                          {/* Show working toggle */}
-                          {derivs && (
-                            <>
-                              <button
-                                onClick={() => setShowSurfaceAreaWorking(!showSurfaceAreaWorking)}
-                                className="mt-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                              >
-                                <svg
-                                  className={`w-3 h-3 transition-transform ${showSurfaceAreaWorking ? 'rotate-90' : ''}`}
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                                Show working
-                              </button>
-
-                              {showSurfaceAreaWorking && (
-                                <div className="mt-2 pl-2 border-l border-slate-600 space-y-1 text-xs">
-                                  <div className="text-slate-400">
-                                    <InlineMath math={`\\frac{\\partial z}{\\partial x} = ${derivs.dzdx}`} />
-                                  </div>
-                                  <div className="text-slate-400">
-                                    <InlineMath math={`\\frac{\\partial z}{\\partial y} = ${derivs.dzdy}`} />
-                                  </div>
-                                  <div className="text-slate-400 mt-1">
-                                    <InlineMath math={`A = \\int_{${yRange[0]}}^{${yRange[1]}} \\int_{${xRange[0]}}^{${xRange[1]}} \\sqrt{1 + (${derivs.dzdx})^2 + (${derivs.dzdy})^2} \\, dx \\, dy`} />
-                                  </div>
-                                  <div className="text-slate-500 mt-1">
-                                    (Computed numerically via mesh triangulation)
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
+                          <span className="text-xs font-mono text-slate-300">
+                            {surface.surfaceArea.toFixed(2)} units²
+                          </span>
                         </div>
                       );
                     })}
+                    <button
+                      onClick={() => setShowSurfaceAreaWorking(!showSurfaceAreaWorking)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300"
+                    >
+                      {showSurfaceAreaWorking ? 'Hide' : 'Show'} formula
+                    </button>
+                    {showSurfaceAreaWorking && (
+                      <div className="text-[10px] text-slate-500 overflow-x-auto custom-scrollbar">
+                        <InlineMath math="A = \iint_D \sqrt{1 + z_x^2 + z_y^2} \, dA" />
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div className="text-slate-500 text-xs">No surfaces</div>
+                  <div className="text-xs text-slate-500">No surfaces</div>
                 )}
-              </div>
+              </CollapsibleSection>
 
-              {/* Volume Between Surfaces */}
-              <div className="bg-slate-800/50 rounded-lg p-2">
-                <div className="text-slate-300 font-medium mb-1">Volume Between Surfaces</div>
-
+              {/* Volume Section */}
+              <CollapsibleSection
+                title="Volume"
+                icon={<span className="text-xs">📦</span>}
+                badge={
+                  volumeBetweenSurfaces !== null ? (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-blue-600 rounded text-white">
+                      {volumeBetweenSurfaces.toFixed(2)}
+                    </span>
+                  ) : null
+                }
+              >
                 {!volumeMode ? (
                   <button
                     onClick={() => {
-                      // If only 1 expression, add z=0 as second
                       if (expressions.length === 1 || (expressions.length > 1 && !expressions[1].trim())) {
                         const newExpressions = [...expressions];
                         if (newExpressions.length === 1) {
@@ -463,135 +518,114 @@ function Graph3DPage() {
                       }
                       setVolumeMode(true);
                     }}
-                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
+                    className="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
                   >
-                    Calculate Volume
+                    Calculate Volume Between Surfaces
                   </button>
                 ) : (
                   <div className="space-y-2">
-                    <div className="text-slate-400 text-xs">
-                      <InlineMath math="V = \iint_D |z_1 - z_2| \, dA" />
-                    </div>
-
                     {activeExpressions.length >= 2 ? (
                       <>
-                        <div className="text-xs text-slate-500 mb-1">
-                          Between surfaces (edit above):
+                        <div className="space-y-1">
+                          {activeExpressions.slice(0, 2).map((expr, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getFunctionColor(expr.originalIndex) }} />
+                              <span className="text-slate-400">z{i+1} =</span>
+                              <span className="text-slate-300 font-mono truncate">{expr.expression}</span>
+                            </div>
+                          ))}
                         </div>
-                        <div className="text-xs space-y-1 pl-2 border-l-2 border-slate-700">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getFunctionColor(activeExpressions[0].originalIndex) }} />
-                            <span className="text-slate-400">z₁ =</span>
-                            <span className="text-white font-mono">{activeExpressions[0].expression}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getFunctionColor(activeExpressions[1].originalIndex) }} />
-                            <span className="text-slate-400">z₂ =</span>
-                            <span className="text-white font-mono">{activeExpressions[1].expression}</span>
-                          </div>
+                        <div className="text-lg font-mono text-white">
+                          V = {volumeBetweenSurfaces !== null ? volumeBetweenSurfaces.toFixed(4) : '...'} units³
                         </div>
-                        <div className="text-white font-mono text-lg">
-                          = {volumeBetweenSurfaces !== null ? volumeBetweenSurfaces.toFixed(4) : '...'} units³
-                        </div>
-
-                        {/* Show working toggle */}
                         <button
                           onClick={() => setShowVolumeWorking(!showVolumeWorking)}
-                          className="mt-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                          className="text-[10px] text-blue-400 hover:text-blue-300"
                         >
-                          <svg
-                            className={`w-3 h-3 transition-transform ${showVolumeWorking ? 'rotate-90' : ''}`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                          Show working
+                          {showVolumeWorking ? 'Hide' : 'Show'} working
                         </button>
-
                         {showVolumeWorking && (
-                          <div className="mt-2 pl-2 border-l border-slate-600 space-y-1 text-xs">
-                            <div className="text-slate-400">
-                              <InlineMath math={`V = \\int_{${yRange[0]}}^{${yRange[1]}} \\int_{${xRange[0]}}^{${xRange[1]}} |z_1 - z_2| \\, dx \\, dy`} />
-                            </div>
-                            <div className="text-slate-400">
-                              <InlineMath math={`V = \\int_{${yRange[0]}}^{${yRange[1]}} \\int_{${xRange[0]}}^{${xRange[1]}} |(${activeExpressions[0].expression}) - (${activeExpressions[1].expression})| \\, dx \\, dy`} />
-                            </div>
-                            <div className="text-slate-500 mt-1">
-                              (Computed numerically using midpoint rule with 60×60 grid)
-                            </div>
-                            <div className="text-slate-500">
-                              Cell area = {((xRange[1] - xRange[0]) / 60 * (yRange[1] - yRange[0]) / 60).toFixed(6)} units²
-                            </div>
+                          <div className="text-[10px] text-slate-500 space-y-1 overflow-x-auto custom-scrollbar">
+                            <InlineMath math="V = \iint_D |z_1 - z_2| \, dA" />
+                            <div className="text-slate-600">(60×60 midpoint rule)</div>
                           </div>
                         )}
                       </>
-                    ) : activeExpressions.length > 2 ? (
-                      <div className="text-amber-400 text-xs">
-                        Only works with exactly 2 surfaces. Please remove extra functions.
-                      </div>
                     ) : (
-                      <div className="text-slate-500 text-xs">
-                        Need 2 valid expressions to calculate volume.
-                      </div>
+                      <div className="text-xs text-slate-500">Need 2 surfaces</div>
                     )}
-
                     <button
                       onClick={() => setVolumeMode(false)}
-                      className="text-xs text-slate-500 hover:text-slate-400"
+                      className="text-[10px] text-slate-500 hover:text-slate-400"
                     >
                       Close
                     </button>
                   </div>
                 )}
-              </div>
+              </CollapsibleSection>
 
-              {/* Intersection Equation - shown when 2+ functions */}
+              {/* Intersection Equation Section */}
               {activeExpressions.length >= 2 && (() => {
                 const intersection = generateIntersectionEquation(activeExpressions[0].expression, activeExpressions[1].expression);
+                // Extract y = ... form for 2D graphing
+                const intersectionExpr = intersection.simplified.replace(/^y\s*=\s*/, '').replace(/\\pm/g, '');
+                const hasValidIntersection = !intersection.simplified.includes('No intersection') &&
+                                             !intersection.simplified.includes('=') ||
+                                             intersection.simplified.startsWith('y');
+
                 return (
-                  <div className="bg-slate-800/50 rounded-lg p-2">
-                    <div className="text-slate-300 font-medium mb-1">Intersection Equation</div>
-                    <div className="text-slate-400 text-xs mb-2">
-                      Where surfaces intersect:
-                    </div>
-                    <div className="text-white text-sm overflow-x-auto scrollbar-hide">
-                      <InlineMath math={intersection.simplified} />
-                    </div>
+                  <CollapsibleSection
+                    title="Intersection"
+                    icon={<span className="text-xs">✕</span>}
+                    defaultOpen={true}
+                  >
+                    <div className="space-y-2">
+                      <div className="text-xs text-slate-400">Where surfaces meet:</div>
+                      <div className="text-sm text-white overflow-x-auto custom-scrollbar py-1">
+                        <InlineMath math={intersection.simplified} />
+                      </div>
 
-                    {/* Expandable working section */}
-                    <button
-                      onClick={() => setShowIntersectionWorking(!showIntersectionWorking)}
-                      className="mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                    >
-                      <svg
-                        className={`w-3 h-3 transition-transform ${showIntersectionWorking ? 'rotate-90' : ''}`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                      Show working
-                    </button>
-
-                    {showIntersectionWorking && (
-                      <div className="mt-2 pl-4 border-l-2 border-slate-700 space-y-1">
-                        {intersection.steps.map((step, i) => (
-                          <div key={i} className="text-slate-400 text-xs overflow-x-auto scrollbar-hide">
-                            <InlineMath math={step} />
+                      {/* Mini 2D Graph Preview */}
+                      {hasValidIntersection && intersectionExpr && !intersectionExpr.includes('No intersection') && (
+                        <div className="mt-2">
+                          <div className="text-[10px] text-slate-500 mb-1">2D Preview (y vs x):</div>
+                          <div className="h-32 bg-slate-900 rounded overflow-hidden border border-slate-700">
+                            <Graph2D
+                              expressions={[{ expression: intersectionExpr, originalIndex: 0 }]}
+                              xRange={xRange}
+                              yRange={[-10, 10]}
+                            />
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <Link
+                            href={`/2d-grapher?eq=${encodeURIComponent(intersectionExpr)}&xr=${xRange[0]},${xRange[1]}`}
+                            target="_blank"
+                            className="mt-2 flex items-center justify-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                            Open in 2D Grapher
+                          </Link>
+                        </div>
+                      )}
 
-                    {activeExpressions.length > 2 && (
-                      <div className="text-slate-500 text-xs mt-2">
-                        (Showing intersection of first two functions)
-                      </div>
-                    )}
-                  </div>
+                      <button
+                        onClick={() => setShowIntersectionWorking(!showIntersectionWorking)}
+                        className="text-[10px] text-blue-400 hover:text-blue-300"
+                      >
+                        {showIntersectionWorking ? 'Hide' : 'Show'} working
+                      </button>
+                      {showIntersectionWorking && (
+                        <div className="space-y-1 text-[10px] text-slate-500 overflow-x-auto custom-scrollbar">
+                          {intersection.steps.map((step, i) => (
+                            <div key={i}>
+                              <InlineMath math={step} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
                 );
               })()}
             </div>
