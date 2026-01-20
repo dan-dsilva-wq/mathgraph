@@ -12,7 +12,11 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nFix multi-surface z-scaling, intersection solver, and volume calculation\n\n- Multi-surface z-scaling: Surfaces now use global z-range for correct relative positioning\n- Grid visibility: Z range always includes z=0 to keep reference grid in view\n- Color consistency: Track original indices so colors match input positions\n- Auto-brackets: sinx -> sin\\(x\\), cosy -> cos\\(y\\), etc.\n- Intersection solver improvements:\n  - Detect parallel surfaces showing \"No intersection\"\n  - Quadratic solver for y² terms using derivatives\n  - Rationalize results for simplification \\(e.g., \\(10-2x²\\)/2 -> 5-x²\\)\n  - Simplify sqrt of constants \\(sqrt\\(4\\) -> 2\\)\n  - Evaluate inverse trig at constants \\(arcsin\\(0\\) -> 0\\)\n- Volume calculation: Fixed midpoint rule with correct cell count\n- Surface area: Show per-expression with partial derivative workings\n- Volume between surfaces: Interactive calculation UI\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git push:*)",
       "Bash(npx vercel:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(node:*)",
+      "Bash(vercel ls:*)",
+      "Bash(vercel inspect:*)",
+      "WebFetch(domain:mathgraph.vercel.app)"
     ]
   }
 }

@@ -139,12 +139,17 @@ mathgraph/
 - [x] Share URL support
 - [x] Recent equations history
 - [x] Example equations picker
-- [ ] Intersection point detection
+- [x] **Interest point detection** - zeros, local min/max, intersections with snap-to-hover
+- [x] **Smooth curve rendering** - line clipping algorithm for proper edge rendering
+- [x] **Discontinuity handling** - tan(x) and other asymptotic functions render correctly
+- [x] **Error messages** - invalid expressions show helpful error text
 - [ ] Derivative visualization (optional)
 
 ### Technical Approach
 - Canvas 2D for fast rendering
-- Custom evaluator for expressions
+- Custom evaluator for expressions with implicit multiplication
+- Line clipping algorithm for smooth curves at boundaries
+- Debounced interest point calculation for smooth zooming
 - Similar UI pattern to 3D grapher
 
 ---
@@ -214,6 +219,22 @@ mathgraph/
 ---
 
 ## Changelog
+
+### 2026-01-20
+- **2D Grapher major fixes**:
+  - **Smooth curve rendering** - Fixed stepped/blocky graphs with line clipping algorithm
+  - **Reset view** - Now properly resets both X and Y axes to initial values
+  - **Interest point detection** - Finds zeros, local min/max, and intersections between functions
+  - **Snap-to-hover** - Cursor snaps to nearby interest points (30px radius)
+  - **Colored markers** - Green=zero, yellow=intersection, red=max, blue=min
+  - **tan(x) rendering** - Discontinuity detection prevents vertical lines at asymptotes
+  - **Error messages** - Invalid expressions now show helpful error text below input
+  - **Zoom performance** - Debounced interest point calculation eliminates lag
+- **Expression parsing fixes** (both 2D and 3D):
+  - **`exp(-x^2)` fix** - JavaScript syntax error with `-x**2` now handled correctly
+  - **`e` constant** - `e*x`, `e(x)`, `ex` now work with implicit multiplication
+  - **`pi` constant** - Same implicit multiplication support as `e`
+  - Uses negative lookahead to avoid breaking `exp()` function
 
 ### 2026-01-19
 - **Multi-surface z-scaling fix** - All surfaces now use a global z-range for consistent positioning
