@@ -83,6 +83,16 @@ function preprocessExpression(expr: string): string {
     result = result.replace(new RegExp(`\\)(${fn})\\(`, 'gi'), ')*$1(');
   });
 
+  // Handle implicit multiplication for constants e and pi
+  // Use negative lookahead to avoid matching 'e' in 'exp'
+  // e( -> e*( , ex -> e*x, ey -> e*y
+  result = result.replace(/\be(?!xp)\(/g, 'e*(');
+  result = result.replace(/\be(?!xp)([xy])/gi, 'e*$1');
+  result = result.replace(/\bpi\(/gi, 'pi*(');
+  result = result.replace(/\bpi([xy])/gi, 'pi*$1');
+  result = result.replace(/([xy])(e)(?!xp)\b/gi, '$1*$2');
+  result = result.replace(/([xy])(pi)\b/gi, '$1*$2');
+
   return result;
 }
 

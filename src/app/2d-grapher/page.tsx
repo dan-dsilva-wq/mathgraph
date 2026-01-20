@@ -242,32 +242,37 @@ function Graph2DPage() {
                 const color = getFunctionColor(index);
 
                 return (
-                  <div key={index} className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: color }}
-                    />
-                    <div className="flex-1 relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono">y=</span>
-                      <input
-                        type="text"
-                        value={expr}
-                        onChange={(e) => handleExpressionChange(index, e.target.value)}
-                        placeholder="sin(x)"
-                        className={`w-full pl-7 pr-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
-                          !validation.valid ? 'border-red-500' : 'border-slate-700'
-                        }`}
+                  <div key={index} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: color }}
                       />
+                      <div className="flex-1 relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono">y=</span>
+                        <input
+                          type="text"
+                          value={expr}
+                          onChange={(e) => handleExpressionChange(index, e.target.value)}
+                          placeholder="sin(x)"
+                          className={`w-full pl-7 pr-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                            !validation.valid ? 'border-red-500' : 'border-slate-700'
+                          }`}
+                        />
+                      </div>
+                      {expressions.length > 1 && (
+                        <button
+                          onClick={() => removeExpression(index)}
+                          className="text-slate-500 hover:text-red-400 p-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
-                    {expressions.length > 1 && (
-                      <button
-                        onClick={() => removeExpression(index)}
-                        className="text-slate-500 hover:text-red-400 p-1"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                    {!validation.valid && validation.error && (
+                      <div className="ml-5 text-xs text-red-400">{validation.error}</div>
                     )}
                   </div>
                 );

@@ -1,11 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { getFunctionColor } from '@/lib/graphing/colors';
 
 interface ExpressionWithIndex {
   expression: string;
   originalIndex: number;
+}
+
+interface InterestPoint {
+  x: number;
+  y: number;
+  type: 'zero' | 'intersection' | 'maximum' | 'minimum';
+  label: string;
+  exprIndex: number;
 }
 
 interface Graph2DProps {
@@ -43,6 +51,22 @@ function createEvaluator(expression: string): ((x: number) => number | null) {
       processed = processed.replace(new RegExp(`\\)(${fn})\\(`, 'gi'), ')*$1(');
     });
 
+    // Handle implicit multiplication for constants e and pi
+    // Use negative lookahead to avoid matching 'e' in 'exp'
+    // e( -> e*( , pi( -> pi*( , ex -> e*x, pix -> pi*x
+    processed = processed.replace(/\be(?!xp)\(/g, 'e*(');
+    processed = processed.replace(/\be(?!xp)x/gi, 'e*x');
+    processed = processed.replace(/\bpi\(/gi, 'pi*(');
+    processed = processed.replace(/\bpix/gi, 'pi*x');
+    processed = processed.replace(/x(e)(?!xp)\b/gi, 'x*$1');
+    processed = processed.replace(/x(pi)\b/gi, 'x*$1');
+
+    // Handle power operator - convert ^ to **
+    processed = processed.replace(/\^/g, '**');
+    // Fix unary minus before exponentiation: -x**2 -> -(x**2)
+    // JavaScript doesn't allow -var** syntax, so we wrap the power in parentheses
+    processed = processed.replace(/-([\w]+)\*\*(\d+|\w+)/g, '-($1**$2)');
+
     // Create function using Function constructor
     const fn = new Function('x', `
       const sin = Math.sin, cos = Math.cos, tan = Math.tan;
@@ -72,13 +96,29 @@ export default function Graph2D({
 }: Graph2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; screenX: number; screenY: number; exprIndex: number } | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; screenX: number; screenY: number; exprIndex: number; label?: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [localXRange, setLocalXRange] = useState<[number, number]>(xRange);
   const [localYRange, setLocalYRange] = useState<[number, number]>(yRange);
+  // Debounced range for expensive calculations (interest points)
+  const [debouncedXRange, setDebouncedXRange] = useState<[number, number]>(xRange);
 
-  // Sync with props
+  // Store initial ranges for reset (only set once on mount, never updated)
+  const initialXRange = useRef<[number, number]>(xRange);
+  const initialYRange = useRef<[number, number]>(yRange);
+  const hasInitialized = useRef(false);
+
+  // Only set initial ranges once on first mount
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      initialXRange.current = xRange;
+      initialYRange.current = yRange;
+      hasInitialized.current = true;
+    }
+  }, [xRange, yRange]);
+
+  // Sync local state when parent props change (e.g., from range controls)
   useEffect(() => {
     setLocalXRange(xRange);
   }, [xRange]);
@@ -86,6 +126,121 @@ export default function Graph2D({
   useEffect(() => {
     setLocalYRange(yRange);
   }, [yRange]);
+
+  // Debounce localXRange for expensive calculations
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedXRange(localXRange);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [localXRange]);
+
+  // Calculate interest points (zeros, intersections, extrema) - uses debounced range
+  const interestPoints = useMemo(() => {
+    const points: InterestPoint[] = [];
+    const validExpressions = expressions.filter(e => e.expression.trim());
+
+    validExpressions.forEach(({ expression, originalIndex }) => {
+      const evaluator = createEvaluator(expression);
+
+      // Find zeros (y = 0) and extrema using sampling
+      const numSamples = 500;
+      let prevY: number | null = null;
+      let prevPrevY: number | null = null;
+      const rangeWidth = debouncedXRange[1] - debouncedXRange[0];
+
+      for (let i = 0; i <= numSamples; i++) {
+        const x = debouncedXRange[0] + (i / numSamples) * rangeWidth;
+        const y = evaluator(x);
+
+        if (y !== null && prevY !== null) {
+          // Check for zero crossing
+          if ((prevY > 0 && y < 0) || (prevY < 0 && y > 0)) {
+            // Binary search for exact zero
+            let lo = x - rangeWidth / numSamples;
+            let hi = x;
+            for (let j = 0; j < 15; j++) {
+              const mid = (lo + hi) / 2;
+              const midY = evaluator(mid);
+              if (midY === null) break;
+              if ((prevY > 0 && midY > 0) || (prevY < 0 && midY < 0)) {
+                lo = mid;
+              } else {
+                hi = mid;
+              }
+            }
+            const zeroX = (lo + hi) / 2;
+            points.push({ x: zeroX, y: 0, type: 'zero', label: `Zero: (${zeroX.toFixed(2)}, 0)`, exprIndex: originalIndex });
+          }
+
+          // Check for local extrema
+          if (prevPrevY !== null) {
+            if (prevY > prevPrevY && prevY > y) {
+              // Local maximum
+              const maxX = x - rangeWidth / numSamples;
+              points.push({ x: maxX, y: prevY, type: 'maximum', label: `Max: (${maxX.toFixed(2)}, ${prevY.toFixed(2)})`, exprIndex: originalIndex });
+            } else if (prevY < prevPrevY && prevY < y) {
+              // Local minimum
+              const minX = x - rangeWidth / numSamples;
+              points.push({ x: minX, y: prevY, type: 'minimum', label: `Min: (${minX.toFixed(2)}, ${prevY.toFixed(2)})`, exprIndex: originalIndex });
+            }
+          }
+        }
+
+        prevPrevY = prevY;
+        prevY = y;
+      }
+    });
+
+    // Find intersections between pairs of functions
+    const intRangeWidth = debouncedXRange[1] - debouncedXRange[0];
+    for (let i = 0; i < validExpressions.length; i++) {
+      for (let j = i + 1; j < validExpressions.length; j++) {
+        const eval1 = createEvaluator(validExpressions[i].expression);
+        const eval2 = createEvaluator(validExpressions[j].expression);
+
+        const numSamples = 300;
+        let prevDiff: number | null = null;
+
+        for (let k = 0; k <= numSamples; k++) {
+          const x = debouncedXRange[0] + (k / numSamples) * intRangeWidth;
+          const y1 = eval1(x);
+          const y2 = eval2(x);
+
+          if (y1 !== null && y2 !== null) {
+            const diff = y1 - y2;
+
+            if (prevDiff !== null && ((prevDiff > 0 && diff < 0) || (prevDiff < 0 && diff > 0))) {
+              // Binary search for intersection
+              let lo = x - intRangeWidth / numSamples;
+              let hi = x;
+              for (let iter = 0; iter < 15; iter++) {
+                const mid = (lo + hi) / 2;
+                const midY1 = eval1(mid);
+                const midY2 = eval2(mid);
+                if (midY1 === null || midY2 === null) break;
+                const midDiff = midY1 - midY2;
+                if ((prevDiff > 0 && midDiff > 0) || (prevDiff < 0 && midDiff < 0)) {
+                  lo = mid;
+                } else {
+                  hi = mid;
+                }
+              }
+              const intX = (lo + hi) / 2;
+              const intY = eval1(intX);
+              if (intY !== null) {
+                points.push({ x: intX, y: intY, type: 'intersection', label: `Intersection: (${intX.toFixed(2)}, ${intY.toFixed(2)})`, exprIndex: validExpressions[i].originalIndex });
+              }
+            }
+
+            prevDiff = diff;
+          }
+        }
+      }
+    }
+
+    return points;
+  }, [expressions, debouncedXRange]);
 
   // Convert screen coords to math coords
   const screenToMath = useCallback((screenX: number, screenY: number, width: number, height: number) => {
@@ -111,6 +266,39 @@ export default function Graph2D({
     return { screenX, screenY };
   }, [localXRange, localYRange]);
 
+  // Clip line segment to visible area and return clipped points
+  const clipLine = useCallback((x1: number, y1: number, x2: number, y2: number): [number, number, number, number] | null => {
+    const yMin = localYRange[0];
+    const yMax = localYRange[1];
+
+    // If both points are outside on same side, skip
+    if ((y1 < yMin && y2 < yMin) || (y1 > yMax && y2 > yMax)) {
+      return null;
+    }
+
+    let clippedX1 = x1, clippedY1 = y1, clippedX2 = x2, clippedY2 = y2;
+
+    // Clip first point
+    if (y1 < yMin) {
+      clippedX1 = x1 + (x2 - x1) * (yMin - y1) / (y2 - y1);
+      clippedY1 = yMin;
+    } else if (y1 > yMax) {
+      clippedX1 = x1 + (x2 - x1) * (yMax - y1) / (y2 - y1);
+      clippedY1 = yMax;
+    }
+
+    // Clip second point
+    if (y2 < yMin) {
+      clippedX2 = x1 + (x2 - x1) * (yMin - y1) / (y2 - y1);
+      clippedY2 = yMin;
+    } else if (y2 > yMax) {
+      clippedX2 = x1 + (x2 - x1) * (yMax - y1) / (y2 - y1);
+      clippedY2 = yMax;
+    }
+
+    return [clippedX1, clippedY1, clippedX2, clippedY2];
+  }, [localYRange]);
+
   // Draw the graph
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -120,7 +308,7 @@ export default function Graph2D({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size to container size
+    // Set canvas size to container size with device pixel ratio
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
     canvas.width = rect.width * dpr;
@@ -213,7 +401,7 @@ export default function Graph2D({
       }
     }
 
-    // Draw functions
+    // Draw functions with proper clipping
     const validExpressions = expressions.filter(e => e.expression.trim());
 
     validExpressions.forEach(({ expression, originalIndex }) => {
@@ -221,37 +409,112 @@ export default function Graph2D({
       const color = getFunctionColor(originalIndex);
 
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-      let isDrawing = false;
-      const numPoints = plotWidth * 2; // 2 points per pixel for smoothness
+      // Use more points for smoother curves
+      const numPoints = Math.max(plotWidth * 4, 2000);
+      const points: { x: number; y: number | null }[] = [];
 
       for (let i = 0; i <= numPoints; i++) {
         const x = localXRange[0] + (i / numPoints) * (localXRange[1] - localXRange[0]);
         const y = evaluator(x);
+        points.push({ x, y });
+      }
 
-        if (y !== null && y >= localYRange[0] && y <= localYRange[1]) {
-          const { screenX, screenY } = mathToScreen(x, y, width, height);
+      // Draw line segments with clipping
+      ctx.beginPath();
+      let isDrawing = false;
+      let lastValidX: number | null = null;
+      let lastValidY: number | null = null;
 
-          if (!isDrawing) {
-            ctx.moveTo(screenX, screenY);
-            isDrawing = true;
-          } else {
-            ctx.lineTo(screenX, screenY);
-          }
-        } else {
+      for (let i = 0; i < points.length; i++) {
+        const { x, y } = points[i];
+
+        if (y === null) {
+          // Discontinuity - end current path
           if (isDrawing) {
             ctx.stroke();
             ctx.beginPath();
             isDrawing = false;
           }
+          lastValidX = null;
+          lastValidY = null;
+          continue;
         }
+
+        // Check for large jumps (discontinuities like tan(x))
+        if (lastValidY !== null && lastValidX !== null) {
+          const dy = Math.abs(y - lastValidY);
+          const yRange = localYRange[1] - localYRange[0];
+
+          // If jump is more than half the visible range, treat as discontinuity
+          if (dy > yRange * 0.5) {
+            if (isDrawing) {
+              ctx.stroke();
+              ctx.beginPath();
+              isDrawing = false;
+            }
+            lastValidX = x;
+            lastValidY = y;
+            continue;
+          }
+        }
+
+        // Clip and draw
+        if (lastValidX !== null && lastValidY !== null) {
+          const clipped = clipLine(lastValidX, lastValidY, x, y);
+
+          if (clipped) {
+            const [cx1, cy1, cx2, cy2] = clipped;
+            const screen1 = mathToScreen(cx1, cy1, width, height);
+            const screen2 = mathToScreen(cx2, cy2, width, height);
+
+            if (!isDrawing) {
+              ctx.moveTo(screen1.screenX, screen1.screenY);
+              isDrawing = true;
+            }
+            ctx.lineTo(screen2.screenX, screen2.screenY);
+          } else {
+            // Both points outside visible area
+            if (isDrawing) {
+              ctx.stroke();
+              ctx.beginPath();
+              isDrawing = false;
+            }
+          }
+        } else {
+          // First point or after discontinuity
+          if (y >= localYRange[0] && y <= localYRange[1]) {
+            const { screenX, screenY } = mathToScreen(x, y, width, height);
+            ctx.moveTo(screenX, screenY);
+            isDrawing = true;
+          }
+        }
+
+        lastValidX = x;
+        lastValidY = y;
       }
 
       if (isDrawing) {
         ctx.stroke();
       }
+    });
+
+    // Draw interest points (zeros, intersections, extrema)
+    interestPoints.forEach(point => {
+      if (point.y < localYRange[0] || point.y > localYRange[1]) return;
+
+      const { screenX, screenY } = mathToScreen(point.x, point.y, width, height);
+
+      // Draw small marker
+      ctx.fillStyle = point.type === 'zero' ? '#22c55e' :
+                      point.type === 'intersection' ? '#f59e0b' :
+                      point.type === 'maximum' ? '#ef4444' : '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, 4, 0, Math.PI * 2);
+      ctx.fill();
     });
 
     // Draw hover point
@@ -261,7 +524,7 @@ export default function Graph2D({
 
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(screenX, screenY, 5, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.strokeStyle = '#ffffff';
@@ -274,7 +537,7 @@ export default function Graph2D({
     ctx.lineWidth = 1;
     ctx.strokeRect(padding, padding, plotWidth, plotHeight);
 
-  }, [expressions, localXRange, localYRange, mathToScreen, hoverPoint]);
+  }, [expressions, localXRange, localYRange, mathToScreen, clipLine, hoverPoint, interestPoints]);
 
   // Calculate nice grid step
   function calculateGridStep(range: number): number {
@@ -326,7 +589,37 @@ export default function Graph2D({
       return;
     }
 
-    const { x } = screenToMath(screenX, screenY, rect.width, rect.height);
+    const { x: mouseX, y: mouseY } = screenToMath(screenX, screenY, rect.width, rect.height);
+
+    // First check if we're near any interest point
+    let closestInterest: InterestPoint | null = null;
+    let closestInterestDist = Infinity;
+    const snapRadius = 30; // pixels
+
+    interestPoints.forEach(point => {
+      if (point.y < localYRange[0] || point.y > localYRange[1]) return;
+
+      const { screenX: pointScreenX, screenY: pointScreenY } = mathToScreen(point.x, point.y, rect.width, rect.height);
+      const dist = Math.sqrt((screenX - pointScreenX) ** 2 + (screenY - pointScreenY) ** 2);
+
+      if (dist < snapRadius && dist < closestInterestDist) {
+        closestInterestDist = dist;
+        closestInterest = point;
+      }
+    });
+
+    if (closestInterest !== null) {
+      const interest = closestInterest as InterestPoint;
+      setHoverPoint({
+        x: interest.x,
+        y: interest.y,
+        screenX,
+        screenY,
+        exprIndex: interest.exprIndex,
+        label: interest.label,
+      });
+      return;
+    }
 
     // Find closest point on any function
     let closestPoint: typeof hoverPoint = null;
@@ -334,19 +627,19 @@ export default function Graph2D({
 
     expressions.filter(e => e.expression.trim()).forEach(({ expression, originalIndex }) => {
       const evaluator = createEvaluator(expression);
-      const y = evaluator(x);
+      const y = evaluator(mouseX);
 
       if (y !== null && y >= localYRange[0] && y <= localYRange[1]) {
-        const { screenY: pointScreenY } = mathToScreen(x, y, rect.width, rect.height);
+        const { screenY: pointScreenY } = mathToScreen(mouseX, y, rect.width, rect.height);
         const dist = Math.abs(pointScreenY - screenY);
 
-        if (dist < 20 && dist < closestDist) {
+        if (dist < 30 && dist < closestDist) {
           closestDist = dist;
           closestPoint = {
-            x,
+            x: mouseX,
             y,
-            screenX: e.clientX - rect.left,
-            screenY: e.clientY - rect.top,
+            screenX,
+            screenY,
             exprIndex: originalIndex,
           };
         }
@@ -354,7 +647,7 @@ export default function Graph2D({
     });
 
     setHoverPoint(closestPoint);
-  }, [expressions, localXRange, localYRange, screenToMath, mathToScreen, isDragging, dragStart]);
+  }, [expressions, localXRange, localYRange, screenToMath, mathToScreen, isDragging, dragStart, interestPoints]);
 
   // Handle zoom with scroll
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -417,11 +710,11 @@ export default function Graph2D({
     link.click();
   }, []);
 
-  // Reset view
+  // Reset view - use stored initial values
   const resetView = useCallback(() => {
-    setLocalXRange(xRange);
-    setLocalYRange(yRange);
-  }, [xRange, yRange]);
+    setLocalXRange(initialXRange.current);
+    setLocalYRange(initialYRange.current);
+  }, []);
 
   // Draw on changes
   useEffect(() => {
@@ -450,11 +743,15 @@ export default function Graph2D({
         <div
           className="absolute pointer-events-none bg-black/80 text-white px-3 py-2 rounded-lg text-xs font-mono backdrop-blur-sm border border-white/20"
           style={{
-            left: hoverPoint.screenX + 15,
+            left: Math.min(hoverPoint.screenX + 15, (containerRef.current?.clientWidth || 300) - 180),
             top: hoverPoint.screenY - 10,
           }}
         >
-          <div className="text-gray-400 text-[10px] mb-1">Coordinates</div>
+          {hoverPoint.label ? (
+            <div className="text-yellow-400 text-[10px] mb-1">{hoverPoint.label}</div>
+          ) : (
+            <div className="text-gray-400 text-[10px] mb-1">Coordinates</div>
+          )}
           <div><span className="text-red-400">x:</span> {hoverPoint.x.toFixed(4)}</div>
           <div><span className="text-green-400">y:</span> {hoverPoint.y.toFixed(4)}</div>
         </div>
