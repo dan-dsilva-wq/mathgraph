@@ -198,10 +198,14 @@ mathgraph/
 - [ ] Add ad placements (header, sidebar, footer)
 - [ ] Ensure ads don't interfere with tool UX
 
-### Analytics
+### Analytics & SEO
 - [x] Set up Google Analytics (configurable via NEXT_PUBLIC_GA_MEASUREMENT_ID)
+- [x] Google Search Console verified and sitemap submitted
+- [x] Pages indexed by Google
 - [ ] Track popular equations
 - [ ] Monitor user engagement
+- [ ] Build backlinks (Reddit, forums, tool directories)
+- [ ] Create SEO content pages targeting search terms
 
 ---
 
@@ -220,7 +224,11 @@ mathgraph/
 
 ## Changelog
 
-### 2026-01-22 (Session 5 - 3D Shadows)
+### 2026-01-22 (Session 5 - 3D Shadows & SEO Setup)
+- **Google Search Console setup**:
+  - Site verified with HTML file verification
+  - Sitemap submitted
+  - All pages indexed
 - **Shadow system for 3D grapher**:
   - Surface casts shadow onto grid plane below
   - Shadow-receiving ground plane using ShadowMaterial (invisible except for shadows)
