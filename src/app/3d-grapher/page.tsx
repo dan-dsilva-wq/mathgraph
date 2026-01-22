@@ -306,8 +306,10 @@ function Graph3DPage() {
   }, [expressions]);
 
   const handleExpressionChange = (index: number, value: string) => {
+    // Replace 'pi' with π symbol for display
+    const displayValue = value.replace(/\bpi\b/gi, 'π');
     const newExpressions = [...expressions];
-    newExpressions[index] = value;
+    newExpressions[index] = displayValue;
     setExpressions(newExpressions);
   };
 

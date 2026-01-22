@@ -83,6 +83,9 @@ function preprocessExpression(expr: string): string {
     result = result.replace(new RegExp(`\\)(${fn})\\(`, 'gi'), ')*$1(');
   });
 
+  // Convert π symbol to pi for math.js
+  result = result.replace(/π/g, 'pi');
+
   // Handle implicit multiplication for constants e and pi
   // Use negative lookahead to avoid matching 'e' in 'exp'
   // e( -> e*( , ex -> e*x, ey -> e*y, e3 -> e*3, 3e -> 3*e

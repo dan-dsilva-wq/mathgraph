@@ -232,16 +232,16 @@ export default function Home() {
             <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
               <h4 className="text-sm font-medium text-blue-400 mb-3">3D Surfaces</h4>
               <div className="space-y-2">
-                <Link href="/3d-grapher?z=sin(sqrt(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                <Link href="/3d-grapher?eq=sin(sqrt(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
                   z = sin(sqrt(x²+y²)) <span className="text-slate-500">- ripple effect</span>
                 </Link>
-                <Link href="/3d-grapher?z=x%5E2-y%5E2" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                <Link href="/3d-grapher?eq=x%5E2-y%5E2" className="block text-slate-300 hover:text-white text-sm transition-colors">
                   z = x² - y² <span className="text-slate-500">- saddle point</span>
                 </Link>
-                <Link href="/3d-grapher?z=e%5E(-(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                <Link href="/3d-grapher?eq=exp(-(x%5E2%2By%5E2))" className="block text-slate-300 hover:text-white text-sm transition-colors">
                   z = e^(-(x²+y²)) <span className="text-slate-500">- Gaussian hill</span>
                 </Link>
-                <Link href="/3d-grapher?z=sin(x)*cos(y)" className="block text-slate-300 hover:text-white text-sm transition-colors">
+                <Link href="/3d-grapher?eq=sin(x)*cos(y)" className="block text-slate-300 hover:text-white text-sm transition-colors">
                   z = sin(x)cos(y) <span className="text-slate-500">- wave pattern</span>
                 </Link>
               </div>
