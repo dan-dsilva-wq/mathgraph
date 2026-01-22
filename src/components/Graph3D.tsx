@@ -110,7 +110,7 @@ export default function Graph3D({
     sceneRef.current = scene;
 
     // Camera - slightly lower angle for better view, large far plane for big ranges
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100000);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100000);
     camera.position.set(12, 10, 12);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
@@ -119,6 +119,7 @@ export default function Graph3D({
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
+      logarithmicDepthBuffer: true, // Better depth precision for close surfaces
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
