@@ -22,6 +22,7 @@ interface Graph2DProps {
   yRange: [number, number];
   onYRangeChange?: (yMin: number, yMax: number) => void;
   mini?: boolean; // Hide controls for embedded/mini mode
+  swapAxes?: boolean; // When true, plot x = f(y) instead of y = f(x)
 }
 
 // Create evaluator for y = f(x)
@@ -95,6 +96,72 @@ function createEvaluator(expression: string): ((x: number) => number | null) {
   }
 }
 
+// Create evaluator for x = f(y) - used when swapAxes is true
+function createEvaluatorSwapped(expression: string): ((y: number) => number | null) {
+  try {
+    // Handle implicit multiplication and common patterns (for y instead of x)
+    let processed = expression
+      .replace(/(\d)([y])/gi, '$1*$2')
+      .replace(/([y])(\d)/gi, '$1*$2')
+      .replace(/(\d)\(/g, '$1*(')
+      .replace(/\)\(/g, ')*(')
+      .replace(/\)(\d)/g, ')*$1')
+      .replace(/\)([y])/gi, ')*$1')
+      .replace(/([y])\(/gi, '$1*(');
+
+    // Handle trig functions without parentheses: siny -> sin(y)
+    const funcs = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'sqrt', 'exp', 'log', 'log10', 'log2', 'abs'];
+    funcs.forEach(fn => {
+      processed = processed.replace(new RegExp(`(${fn})y(?![a-z0-9(])`, 'gi'), '$1(y)');
+      processed = processed.replace(new RegExp(`(${fn})y([+\\-*/^])`, 'gi'), '$1(y)$2');
+      processed = processed.replace(new RegExp(`(${fn})y$`, 'gi'), '$1(y)');
+    });
+
+    // Add multiplication before functions
+    funcs.forEach(fn => {
+      processed = processed.replace(new RegExp(`(\\d)(${fn})\\(`, 'gi'), '$1*$2(');
+      processed = processed.replace(new RegExp(`(y)(${fn})\\(`, 'gi'), '$1*$2(');
+      processed = processed.replace(new RegExp(`\\)(${fn})\\(`, 'gi'), ')*$1(');
+    });
+
+    // Handle implicit multiplication for constants e and pi
+    processed = processed.replace(/\be(?!xp)\(/g, 'e*(');
+    processed = processed.replace(/\be(?!xp)y/gi, 'e*y');
+    processed = processed.replace(/\be(?!xp)(\d)/gi, 'e*$1');
+    processed = processed.replace(/(\d)(e)(?!xp)\b/gi, '$1*$2');
+    processed = processed.replace(/\bpi\(/gi, 'pi*(');
+    processed = processed.replace(/\bpiy/gi, 'pi*y');
+    processed = processed.replace(/\bpi(\d)/gi, 'pi*$1');
+    processed = processed.replace(/(\d)(pi)\b/gi, '$1*$2');
+    processed = processed.replace(/y(e)(?!xp)\b/gi, 'y*$1');
+    processed = processed.replace(/y(pi)\b/gi, 'y*$1');
+
+    // Handle power operator
+    processed = processed.replace(/\^/g, '**');
+    processed = processed.replace(/-([\w]+)\*\*(\d+|\w+)/g, '-($1**$2)');
+    processed = processed.replace(/-(\([^()]+\))\*\*(\d+|\w+|\([^()]+\))/g, '-($1**$2)');
+
+    // Create function using Function constructor with y as parameter
+    const fn = new Function('y', `
+      const sin = Math.sin, cos = Math.cos, tan = Math.tan;
+      const asin = Math.asin, acos = Math.acos, atan = Math.atan;
+      const sinh = Math.sinh, cosh = Math.cosh, tanh = Math.tanh;
+      const sqrt = Math.sqrt, exp = Math.exp, log = Math.log, ln = Math.log;
+      const log10 = Math.log10, log2 = Math.log2;
+      const abs = Math.abs, ceil = Math.ceil, floor = Math.floor, round = Math.round;
+      const PI = Math.PI, E = Math.E, pi = Math.PI, e = Math.E;
+      const pow = Math.pow;
+      try {
+        const result = ${processed};
+        return (typeof result === 'number' && isFinite(result)) ? result : null;
+      } catch { return null; }
+    `);
+    return fn as (y: number) => number | null;
+  } catch {
+    return () => null;
+  }
+}
+
 // Calculate grid steps - minor (finer) and major (coarser with labels)
 function calculateGridSteps(range: number): { minorStep: number; majorStep: number } {
   const magnitude = Math.pow(10, Math.floor(Math.log10(range)));
@@ -135,6 +202,7 @@ export default function Graph2D({
   yRange,
   onYRangeChange,
   mini = false,
+  swapAxes = false,
 }: Graph2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -308,8 +376,8 @@ export default function Graph2D({
     return { screenX, screenY };
   }, [localXRange, localYRange]);
 
-  // Clip line segment to visible area and return clipped points
-  const clipLine = useCallback((x1: number, y1: number, x2: number, y2: number): [number, number, number, number] | null => {
+  // Clip line segment to visible area (y-axis) and return clipped points
+  const clipLineY = useCallback((x1: number, y1: number, x2: number, y2: number): [number, number, number, number] | null => {
     const yMin = localYRange[0];
     const yMax = localYRange[1];
 
@@ -340,6 +408,42 @@ export default function Graph2D({
 
     return [clippedX1, clippedY1, clippedX2, clippedY2];
   }, [localYRange]);
+
+  // Clip line segment to visible area (x-axis) for swapped axes mode
+  const clipLineX = useCallback((x1: number, y1: number, x2: number, y2: number): [number, number, number, number] | null => {
+    const xMin = localXRange[0];
+    const xMax = localXRange[1];
+
+    // If both points are outside on same side, skip
+    if ((x1 < xMin && x2 < xMin) || (x1 > xMax && x2 > xMax)) {
+      return null;
+    }
+
+    let clippedX1 = x1, clippedY1 = y1, clippedX2 = x2, clippedY2 = y2;
+
+    // Clip first point
+    if (x1 < xMin) {
+      clippedY1 = y1 + (y2 - y1) * (xMin - x1) / (x2 - x1);
+      clippedX1 = xMin;
+    } else if (x1 > xMax) {
+      clippedY1 = y1 + (y2 - y1) * (xMax - x1) / (x2 - x1);
+      clippedX1 = xMax;
+    }
+
+    // Clip second point
+    if (x2 < xMin) {
+      clippedY2 = y1 + (y2 - y1) * (xMin - x1) / (x2 - x1);
+      clippedX2 = xMin;
+    } else if (x2 > xMax) {
+      clippedY2 = y1 + (y2 - y1) * (xMax - x1) / (x2 - x1);
+      clippedX2 = xMax;
+    }
+
+    return [clippedX1, clippedY1, clippedX2, clippedY2];
+  }, [localXRange]);
+
+  // Choose appropriate clip function
+  const clipLine = swapAxes ? clipLineX : clipLineY;
 
   // Draw the graph
   const draw = useCallback(() => {
@@ -485,7 +589,6 @@ export default function Graph2D({
     const validExpressions = expressions.filter(e => e.expression.trim());
 
     validExpressions.forEach(({ expression, originalIndex }) => {
-      const evaluator = createEvaluator(expression);
       const color = getFunctionColor(originalIndex);
 
       ctx.strokeStyle = color;
@@ -497,10 +600,23 @@ export default function Graph2D({
       const numPoints = Math.max(plotWidth * 4, 2000);
       const points: { x: number; y: number | null }[] = [];
 
-      for (let i = 0; i <= numPoints; i++) {
-        const x = localXRange[0] + (i / numPoints) * (localXRange[1] - localXRange[0]);
-        const y = evaluator(x);
-        points.push({ x, y });
+      if (swapAxes) {
+        // x = f(y) mode - iterate over y, compute x
+        const evaluator = createEvaluatorSwapped(expression);
+        for (let i = 0; i <= numPoints; i++) {
+          const inputY = localYRange[0] + (i / numPoints) * (localYRange[1] - localYRange[0]);
+          const computedX = evaluator(inputY);
+          // Store as {x: computed, y: input} - if x is null, mark y as null to indicate invalid point
+          points.push({ x: computedX ?? 0, y: computedX !== null ? inputY : null });
+        }
+      } else {
+        // y = f(x) mode - normal operation
+        const evaluator = createEvaluator(expression);
+        for (let i = 0; i <= numPoints; i++) {
+          const x = localXRange[0] + (i / numPoints) * (localXRange[1] - localXRange[0]);
+          const y = evaluator(x);
+          points.push({ x, y });
+        }
       }
 
       // Draw line segments with clipping
@@ -526,11 +642,12 @@ export default function Graph2D({
 
         // Check for large jumps (discontinuities like tan(x))
         if (lastValidY !== null && lastValidX !== null) {
-          const dy = Math.abs(y - lastValidY);
-          const yRange = localYRange[1] - localYRange[0];
+          // For swapAxes, check x-jumps (x is computed); otherwise check y-jumps
+          const jumpValue = swapAxes ? Math.abs(x - lastValidX) : Math.abs(y - lastValidY);
+          const rangeSize = swapAxes ? (localXRange[1] - localXRange[0]) : (localYRange[1] - localYRange[0]);
 
           // If jump is more than half the visible range, treat as discontinuity
-          if (dy > yRange * 0.5) {
+          if (jumpValue > rangeSize * 0.5) {
             if (isDrawing) {
               ctx.stroke();
               ctx.beginPath();

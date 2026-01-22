@@ -754,14 +754,69 @@ function solveForY(expr: string): { solved: boolean; solution: string; rawExpr: 
 }
 
 /**
+ * Swap x and y variables in an expression
+ */
+function swapXY(expr: string): string {
+  // Use a placeholder to avoid double-swapping
+  return expr
+    .replace(/\bx\b/g, '___TEMP___')
+    .replace(/\by\b/g, 'x')
+    .replace(/___TEMP___/g, 'y');
+}
+
+/**
+ * Try to solve an expression for x by swapping variables, solving for y, then swapping back
+ */
+function solveForX(expr: string): { solved: boolean; solution: string; rawExpr: string; rawExprNeg: string; hasPlusMinus: boolean; steps: string[] } {
+  // Swap x and y in the expression
+  const swappedExpr = swapXY(expr);
+
+  // Solve for y (which is actually x after swapping)
+  const result = solveForYUniversal(swappedExpr);
+
+  let rawExpr = '';
+  let rawExprNeg = '';
+  let hasPlusMinus = false;
+  const steps: string[] = [];
+
+  if (result.solved && result.solution) {
+    hasPlusMinus = result.solution.includes('\\pm');
+
+    // Swap x and y back in the solution
+    const swappedSolution = swapXY(result.solution).replace(/^y\s*=\s*/, 'x = ');
+
+    // Swap back in steps too
+    result.steps.forEach(step => {
+      steps.push(swapXY(step));
+    });
+
+    // Remove "x = " prefix and ± symbol for raw expression
+    const withoutPrefix = swappedSolution
+      .replace(/^x\s*=\s*/, '')
+      .replace(/\\pm\s*/g, '');
+
+    rawExpr = latexToMath(withoutPrefix);
+
+    if (hasPlusMinus) {
+      rawExprNeg = '-(' + rawExpr + ')';
+    }
+
+    return { solved: true, solution: swappedSolution, rawExpr, rawExprNeg, hasPlusMinus, steps };
+  }
+
+  return { solved: false, solution: '', rawExpr: '', rawExprNeg: '', hasPlusMinus: false, steps: [] };
+}
+
+/**
  * Generate the intersection equation for two expressions
- * Solves for y where possible
+ * Solves for y where possible, falls back to solving for x
  */
 export function generateIntersectionEquation(expr1: string, expr2: string): {
   simplified: string;
   rawExpression: string; // Raw math expression for 2D graphing (positive branch)
   rawExpressionNeg: string; // Negative branch for ± solutions
   hasPlusMinus: boolean; // Whether the solution has ±
+  solvedFor: 'y' | 'x' | null; // Which variable was solved for (for axis swapping in 2D preview)
   steps: string[];
 } {
   const processed1 = preprocessExpression(expr1);
@@ -794,6 +849,7 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
           rawExpression: '',
           rawExpressionNeg: '',
           hasPlusMinus: false,
+          solvedFor: null,
           steps
         };
       } else {
@@ -804,6 +860,7 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
           rawExpression: '',
           rawExpressionNeg: '',
           hasPlusMinus: false,
+          solvedFor: null,
           steps
         };
       }
@@ -811,29 +868,46 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
 
     steps.push(`${expressionToLatex(simplifiedStr)} = 0`);
 
-    // Try to solve for y
-    const solution = solveForY(simplifiedStr);
+    // Try to solve for y first
+    const solutionY = solveForY(simplifiedStr);
 
-    if (solution.solved) {
+    if (solutionY.solved) {
       // Add solving steps
-      steps.push(...solution.steps);
+      steps.push(...solutionY.steps);
       return {
-        simplified: solution.solution,
-        rawExpression: solution.rawExpr,
-        rawExpressionNeg: solution.rawExprNeg,
-        hasPlusMinus: solution.hasPlusMinus,
-        steps
-      };
-    } else {
-      // Couldn't solve for y, return simplified form
-      return {
-        simplified: `${expressionToLatex(simplifiedStr)} = 0`,
-        rawExpression: simplifiedStr, // Use the simplified raw expression
-        rawExpressionNeg: '',
-        hasPlusMinus: false,
+        simplified: solutionY.solution,
+        rawExpression: solutionY.rawExpr,
+        rawExpressionNeg: solutionY.rawExprNeg,
+        hasPlusMinus: solutionY.hasPlusMinus,
+        solvedFor: 'y',
         steps
       };
     }
+
+    // Try to solve for x if y failed
+    const solutionX = solveForX(simplifiedStr);
+
+    if (solutionX.solved) {
+      steps.push(...solutionX.steps);
+      return {
+        simplified: solutionX.solution,
+        rawExpression: solutionX.rawExpr,
+        rawExpressionNeg: solutionX.rawExprNeg,
+        hasPlusMinus: solutionX.hasPlusMinus,
+        solvedFor: 'x',
+        steps
+      };
+    }
+
+    // Couldn't solve for either, return simplified form
+    return {
+      simplified: `${expressionToLatex(simplifiedStr)} = 0`,
+      rawExpression: simplifiedStr,
+      rawExpressionNeg: '',
+      hasPlusMinus: false,
+      solvedFor: null,
+      steps
+    };
   } catch {
     // Fallback
     const originalLatex = `(${expressionToLatex(expr1)}) - (${expressionToLatex(expr2)}) = 0`;
@@ -842,6 +916,7 @@ export function generateIntersectionEquation(expr1: string, expr2: string): {
       rawExpression: `(${expr1}) - (${expr2})`,
       rawExpressionNeg: '',
       hasPlusMinus: false,
+      solvedFor: null,
       steps: [originalLatex]
     };
   }

@@ -633,7 +633,7 @@ function Graph3DPage() {
                       {hasValidIntersection && (
                         <div className="mt-2">
                           <div className="text-[10px] text-slate-500 mb-1">
-                            2D Preview (y vs x){intersection.hasPlusMinus && ' - both ± branches'}:
+                            2D Preview ({intersection.solvedFor === 'x' ? 'x vs y' : 'y vs x'}){intersection.hasPlusMinus && ' - both ± branches'}:
                           </div>
                           <div className="h-48 bg-slate-900 rounded overflow-hidden border border-slate-700">
                             <Graph2D
@@ -648,6 +648,7 @@ function Graph3DPage() {
                               xRange={xRange}
                               yRange={[-10, 10]}
                               mini={true}
+                              swapAxes={intersection.solvedFor === 'x'}
                             />
                           </div>
                           <Link

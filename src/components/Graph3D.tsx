@@ -158,7 +158,7 @@ export default function Graph3D({
     mainLight.shadow.camera.right = 25;
     mainLight.shadow.camera.top = 25;
     mainLight.shadow.camera.bottom = -25;
-    mainLight.shadow.bias = -0.0005; // Smaller bias = shadows closer to contact point
+    mainLight.shadow.bias = -0.0001; // Smaller bias = shadows closer to contact point
     scene.add(mainLight);
 
     const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
@@ -538,6 +538,9 @@ export default function Graph3D({
             opacity: isTransparent ? 0.75 : 1,
             depthWrite: true,
             alphaTest: 0, // Ensures proper depth testing
+            polygonOffset: true, // Prevent z-fighting between close surfaces
+            polygonOffsetFactor: index + 1, // Offset each surface differently
+            polygonOffsetUnits: index + 1,
           });
 
           const surfaceMesh = new THREE.Mesh(geometry, surfaceMaterial);
