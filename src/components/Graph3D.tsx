@@ -124,6 +124,7 @@ export default function Graph3D({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.sortObjects = true; // Enable object sorting for transparency
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -148,6 +149,15 @@ export default function Graph3D({
     const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
     mainLight.position.set(10, 20, 10);
     mainLight.castShadow = true;
+    mainLight.shadow.mapSize.width = 2048;
+    mainLight.shadow.mapSize.height = 2048;
+    mainLight.shadow.camera.near = 0.5;
+    mainLight.shadow.camera.far = 100;
+    mainLight.shadow.camera.left = -25;
+    mainLight.shadow.camera.right = 25;
+    mainLight.shadow.camera.top = 25;
+    mainLight.shadow.camera.bottom = -25;
+    mainLight.shadow.bias = -0.0005; // Smaller bias = shadows closer to contact point
     scene.add(mainLight);
 
     const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
@@ -297,6 +307,20 @@ export default function Graph3D({
     const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444466, 0x333355);
     gridHelper.position.y = zeroPlaneY;
     helpersGroup.add(gridHelper);
+
+    // Shadow-receiving ground plane (slightly below grid to avoid z-fighting)
+    const shadowPlaneGeom = new THREE.PlaneGeometry(gridSize * 1.5, gridSize * 1.5);
+    const shadowPlaneMat = new THREE.ShadowMaterial({
+      opacity: 0.3,
+      color: 0x000022,
+      depthWrite: false, // Don't write to depth buffer - prevents occlusion issues
+    });
+    const shadowPlane = new THREE.Mesh(shadowPlaneGeom, shadowPlaneMat);
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.y = zeroPlaneY - 0.05; // Slightly lower to avoid z-fighting
+    shadowPlane.receiveShadow = true;
+    shadowPlane.renderOrder = -1; // Render first, behind everything else
+    helpersGroup.add(shadowPlane);
 
     // Arrow head size proportional to axis
     const arrowLength = axisLength * 0.08;
@@ -503,18 +527,23 @@ export default function Graph3D({
           }
 
           // Main surface with improved material
+          const isTransparent = validExpressions.length > 1;
           const surfaceMaterial = new THREE.MeshStandardMaterial({
             vertexColors: true,
             side: THREE.DoubleSide,
             roughness: 0.4,
             metalness: 0.1,
-            transparent: validExpressions.length > 1,
-            opacity: validExpressions.length > 1 ? 0.85 : 1,
+            transparent: isTransparent,
+            opacity: isTransparent ? 0.75 : 1,
+            depthWrite: true,
+            alphaTest: 0, // Ensures proper depth testing
           });
 
           const surfaceMesh = new THREE.Mesh(geometry, surfaceMaterial);
           surfaceMesh.castShadow = true;
-          surfaceMesh.receiveShadow = true;
+          surfaceMesh.receiveShadow = true; // Enabled for cross-surface shadows
+          // Frustum culling can cause parts to disappear - disable for surfaces
+          surfaceMesh.frustumCulled = false;
           surfaceGroup.add(surfaceMesh);
 
           // Add wireframe/grid overlay for better shape definition

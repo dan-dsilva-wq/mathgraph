@@ -220,6 +220,18 @@ mathgraph/
 
 ## Changelog
 
+### 2026-01-22 (Session 5 - 3D Shadows)
+- **Shadow system for 3D grapher**:
+  - Surface casts shadow onto grid plane below
+  - Shadow-receiving ground plane using ShadowMaterial (invisible except for shadows)
+  - Cross-surface shadows - surfaces cast shadows on each other
+  - Configurable shadow bias to minimize gap between contact and shadow
+  - Shadow camera properly configured for coverage
+- **Known limitation documented**: Transparent surface sorting is a WebGL limitation
+  - When two transparent surfaces intersect, render order depends on camera angle
+  - This is inherent to how GPU depth buffers work with transparency
+  - Would require Order-Independent Transparency (OIT) to fix properly
+
 ### 2026-01-20 (Session 4 - Launch Complete)
 - **Google Analytics setup** - Added GoogleAnalytics component (ID: G-XWN89M6HS1)
 - **Lint fixes** - Fixed ESLint errors (moved functions outside component, removed redundant useEffects)
