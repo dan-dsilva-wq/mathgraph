@@ -5,21 +5,31 @@ import { useState, useEffect } from 'react';
 interface RangeControlsProps {
   xRange: [number, number];
   yRange: [number, number];
+  zRange?: [number, number];
+  autoZRange?: boolean;
   onXRangeChange: (range: [number, number]) => void;
   onYRangeChange: (range: [number, number]) => void;
+  onZRangeChange?: (range: [number, number]) => void;
+  onAutoZRangeChange?: (auto: boolean) => void;
 }
 
 export default function RangeControls({
   xRange,
   yRange,
+  zRange,
+  autoZRange = true,
   onXRangeChange,
   onYRangeChange,
+  onZRangeChange,
+  onAutoZRangeChange,
 }: RangeControlsProps) {
   // Local string state for inputs - allows empty values while typing
   const [xMinStr, setXMinStr] = useState(String(xRange[0]));
   const [xMaxStr, setXMaxStr] = useState(String(xRange[1]));
   const [yMinStr, setYMinStr] = useState(String(yRange[0]));
   const [yMaxStr, setYMaxStr] = useState(String(yRange[1]));
+  const [zMinStr, setZMinStr] = useState(zRange ? String(zRange[0]) : '-10');
+  const [zMaxStr, setZMaxStr] = useState(zRange ? String(zRange[1]) : '10');
 
   // Sync local state when props change externally
   useEffect(() => {
@@ -32,8 +42,15 @@ export default function RangeControls({
     setYMaxStr(String(yRange[1]));
   }, [yRange]);
 
+  useEffect(() => {
+    if (zRange) {
+      setZMinStr(String(zRange[0]));
+      setZMaxStr(String(zRange[1]));
+    }
+  }, [zRange]);
+
   const handleBlur = (
-    type: 'xMin' | 'xMax' | 'yMin' | 'yMax',
+    type: 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax',
     value: string
   ) => {
     const num = parseFloat(value);
@@ -67,12 +84,30 @@ export default function RangeControls({
           setYMaxStr(String(yRange[1]));
         }
         break;
+      case 'zMin':
+        if (zRange && onZRangeChange) {
+          if (!isNaN(num) && num < zRange[1]) {
+            onZRangeChange([num, zRange[1]]);
+          } else {
+            setZMinStr(String(zRange[0]));
+          }
+        }
+        break;
+      case 'zMax':
+        if (zRange && onZRangeChange) {
+          if (!isNaN(num) && num > zRange[0]) {
+            onZRangeChange([zRange[0], num]);
+          } else {
+            setZMaxStr(String(zRange[1]));
+          }
+        }
+        break;
     }
   };
 
   const handleKeyDown = (
     e: React.KeyboardEvent,
-    type: 'xMin' | 'xMax' | 'yMin' | 'yMax',
+    type: 'xMin' | 'xMax' | 'yMin' | 'yMax' | 'zMin' | 'zMax',
     value: string
   ) => {
     if (e.key === 'Enter') {
@@ -136,6 +171,54 @@ export default function RangeControls({
           />
         </div>
       </div>
+
+      {/* Z Range */}
+      {zRange && onZRangeChange && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs text-slate-500">Z Axis</label>
+            {onAutoZRangeChange && (
+              <button
+                onClick={() => onAutoZRangeChange(!autoZRange)}
+                className={`text-[10px] px-1.5 py-0.5 rounded ${
+                  autoZRange
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                Auto
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={zMinStr}
+              onChange={(e) => setZMinStr(e.target.value)}
+              onBlur={(e) => handleBlur('zMin', e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, 'zMin', zMinStr)}
+              disabled={autoZRange}
+              className={`w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center ${
+                autoZRange ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            />
+            <span className="text-slate-500 text-sm">to</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={zMaxStr}
+              onChange={(e) => setZMaxStr(e.target.value)}
+              onBlur={(e) => handleBlur('zMax', e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, 'zMax', zMaxStr)}
+              disabled={autoZRange}
+              className={`w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center ${
+                autoZRange ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

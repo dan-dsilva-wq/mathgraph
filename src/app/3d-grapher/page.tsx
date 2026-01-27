@@ -103,7 +103,9 @@ function Graph3DPage() {
   );
   const [xRange, setXRange] = useState<[number, number]>(urlXRange || [-5, 5]);
   const [yRange, setYRange] = useState<[number, number]>(urlYRange || [-5, 5]);
-  const [zRange, setZRange] = useState<[number, number]>([-10, 10]);
+  const [zRange, setZRange] = useState<[number, number]>([-5, 5]);
+  const [userZRange, setUserZRange] = useState<[number, number]>([-5, 5]);
+  const [autoZRange, setAutoZRange] = useState(false);
   const [stats, setStats] = useState<{
     surfaceAreas: { expression: string; originalIndex: number; surfaceArea: number }[];
     volume: number;
@@ -115,16 +117,20 @@ function Graph3DPage() {
   const [showVolumeWorking, setShowVolumeWorking] = useState(false);
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
-  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>(() => {
-    if (typeof window === 'undefined') return [];
+  const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Load recent equations from localStorage after mount (avoids hydration mismatch)
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(HISTORY_KEY);
-      return stored ? JSON.parse(stored) : [];
+      if (stored) {
+        setRecentEquations(JSON.parse(stored));
+      }
     } catch {
-      return [];
+      // Ignore localStorage errors
     }
-  });
-  const [showHistory, setShowHistory] = useState(false);
+  }, []);
   const [showSurfaceGrid, setShowSurfaceGrid] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -328,6 +334,14 @@ function Graph3DPage() {
 
   const handleZRangeChange = useCallback((zMin: number, zMax: number) => {
     setZRange([zMin, zMax]);
+    // When auto, also update userZRange to reflect the computed values
+    if (autoZRange) {
+      setUserZRange([zMin, zMax]);
+    }
+  }, [autoZRange]);
+
+  const handleUserZRangeChange = useCallback((range: [number, number]) => {
+    setUserZRange(range);
   }, []);
 
   const handleStatsChange = useCallback((newStats: typeof stats) => {
@@ -697,17 +711,13 @@ function Graph3DPage() {
             <RangeControls
               xRange={xRange}
               yRange={yRange}
+              zRange={userZRange}
+              autoZRange={autoZRange}
               onXRangeChange={setXRange}
               onYRangeChange={setYRange}
+              onZRangeChange={handleUserZRangeChange}
+              onAutoZRangeChange={setAutoZRange}
             />
-          </div>
-
-          {/* Z Range Display */}
-          <div className="p-4 border-b border-slate-800">
-            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Z Range (auto)</h3>
-            <p className="text-sm text-slate-300 font-mono">
-              {zRange[0].toFixed(2)} to {zRange[1].toFixed(2)}
-            </p>
           </div>
 
           {/* Display Options */}
@@ -800,6 +810,7 @@ function Graph3DPage() {
               expressions={activeExpressions}
               xRange={xRange}
               yRange={yRange}
+              zRange={autoZRange ? undefined : userZRange}
               resolution={60}
               showSurfaceGrid={showSurfaceGrid}
               onZRangeChange={handleZRangeChange}

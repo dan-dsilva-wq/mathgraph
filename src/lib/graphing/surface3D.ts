@@ -10,6 +10,7 @@ interface SurfaceOptions {
   functionIndex?: number; // For multi-function coloring
   globalZMin?: number; // For consistent scaling across multiple surfaces
   globalZMax?: number; // For consistent scaling across multiple surfaces
+  zClipRange?: [number, number]; // User-specified z range for clipping
 }
 
 export interface CriticalPoint {
@@ -31,7 +32,7 @@ interface SurfaceResult {
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
-  const { expression, xRange, yRange, resolution, functionIndex = 0, globalZMin, globalZMax } = options;
+  const { expression, xRange, yRange, resolution, functionIndex = 0, globalZMin, globalZMax, zClipRange } = options;
   const evaluate = createEvaluator(expression);
 
   const [xMin, xMax] = xRange;
@@ -46,22 +47,46 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   const targetZSpan = Math.max(xSpan, ySpan); // Z should fit proportionally
 
   // First pass: calculate all z values and find min/max
+  // DON'T clip to zClipRange here - we need original values for interpolation
   const zValues: (number | null)[][] = [];
   let zMin = Infinity;
   let zMax = -Infinity;
+
+  // Only filter out infinite/NaN values for numerical stability
+  const extremeCap = 1e6;
 
   for (let i = 0; i <= resolution; i++) {
     zValues[i] = [];
     for (let j = 0; j <= resolution; j++) {
       const x = xMin + i * xStep;
       const y = yMin + j * yStep;
-      const z = evaluate(x, y);
+      let z = evaluate(x, y);
+
+      // Only filter out truly extreme/infinite values
+      if (z !== null && (Math.abs(z) > extremeCap || !isFinite(z))) {
+        z = null;
+      }
+
       zValues[i][j] = z;
 
+      // Only count in-range values for zMin/zMax calculation
       if (z !== null) {
-        zMin = Math.min(zMin, z);
-        zMax = Math.max(zMax, z);
+        if (!zClipRange || (z >= zClipRange[0] && z <= zClipRange[1])) {
+          zMin = Math.min(zMin, z);
+          zMax = Math.max(zMax, z);
+        }
       }
+    }
+  }
+
+  // If all values are out of range, use the clip range for scaling
+  if (!isFinite(zMin) || !isFinite(zMax)) {
+    if (zClipRange) {
+      zMin = zClipRange[0];
+      zMax = zClipRange[1];
+    } else {
+      zMin = -1;
+      zMax = 1;
     }
   }
 
@@ -105,29 +130,189 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     }
   }
 
-  // Create triangles
+  // For z-range clipping, we interpolate edges that cross the boundary
+  // to create smooth clipped edges instead of jagged staircases
+
+  // Track extra vertices for clipped triangles
+  const extraVertices: number[] = [];
+  const extraColors: number[] = [];
+  let extraVertexCount = 0;
+
+  // Helper to get vertex index
+  const getVertexIndex = (i: number, j: number): number => i * (resolution + 1) + j;
+
+  // Helper to add a new interpolated vertex at z boundary
+  const addClippedVertex = (
+    i1: number, j1: number, z1: number,
+    i2: number, j2: number, z2: number,
+    zBoundary: number
+  ): number => {
+    const t = (zBoundary - z1) / (z2 - z1);
+
+    const x1 = xMin + i1 * xStep;
+    const y1 = yMin + j1 * yStep;
+    const x2 = xMin + i2 * xStep;
+    const y2 = yMin + j2 * yStep;
+
+    const x = x1 + t * (x2 - x1);
+    const y = y1 + t * (y2 - y1);
+    const scaledZ = (zBoundary - zOffset) * zScale;
+
+    extraVertices.push(x, scaledZ, y);
+
+    const color = getColorForZWithPalette(zBoundary, zMin, zMax, functionIndex);
+    extraColors.push(color.r, color.g, color.b);
+
+    const newIndex = (resolution + 1) * (resolution + 1) + extraVertexCount;
+    extraVertexCount++;
+    return newIndex;
+  };
+
+  // Helper to check if z is in range
+  const inRange = (z: number | null): boolean => {
+    if (z === null) return false;
+    if (!zClipRange) return true;
+    return z >= zClipRange[0] && z <= zClipRange[1];
+  };
+
+  // Helper to clip a triangle against z boundaries
+  // Returns array of triangles (as index triplets) after clipping
+  // IMPORTANT: Preserves winding order from original triangle
+  const clipTriangle = (
+    idx1: number, i1: number, j1: number, z1: number | null,
+    idx2: number, i2: number, j2: number, z2: number | null,
+    idx3: number, i3: number, j3: number, z3: number | null
+  ): number[][] => {
+    if (z1 === null || z2 === null || z3 === null) return [];
+    if (!zClipRange) return [[idx1, idx2, idx3]];
+
+    const [clipMin, clipMax] = zClipRange;
+    const in1 = z1 >= clipMin && z1 <= clipMax;
+    const in2 = z2 >= clipMin && z2 <= clipMax;
+    const in3 = z3 >= clipMin && z3 <= clipMax;
+
+    const inCount = (in1 ? 1 : 0) + (in2 ? 1 : 0) + (in3 ? 1 : 0);
+
+    if (inCount === 3) return [[idx1, idx2, idx3]]; // All inside
+    if (inCount === 0) return []; // All outside
+
+    // Helper to get clip point on edge from vertex A to vertex B
+    const getEdgeClip = (
+      iA: number, jA: number, zA: number,
+      iB: number, jB: number, zB: number
+    ): number => {
+      // Determine which boundary the edge crosses
+      const boundary = (zA < clipMin || zB < clipMin) ? clipMin : clipMax;
+      return addClippedVertex(iA, jA, zA, iB, jB, zB, boundary);
+    };
+
+    // 1 vertex inside, 2 outside: create 1 triangle
+    // Preserve winding by keeping the inside vertex in its original position
+    if (inCount === 1) {
+      if (in1) {
+        // v1 inside, v2 and v3 outside
+        // Original: v1 -> v2 -> v3
+        // Clipped:  v1 -> clip(1->2) -> clip(1->3)
+        const c12 = getEdgeClip(i1, j1, z1, i2, j2, z2);
+        const c13 = getEdgeClip(i1, j1, z1, i3, j3, z3);
+        return [[idx1, c12, c13]];
+      } else if (in2) {
+        // v2 inside, v1 and v3 outside
+        // Original: v1 -> v2 -> v3
+        // Clipped:  clip(2->1) -> v2 -> clip(2->3)
+        const c21 = getEdgeClip(i2, j2, z2, i1, j1, z1);
+        const c23 = getEdgeClip(i2, j2, z2, i3, j3, z3);
+        return [[c21, idx2, c23]];
+      } else {
+        // v3 inside, v1 and v2 outside
+        // Original: v1 -> v2 -> v3
+        // Clipped:  clip(3->1) -> clip(3->2) -> v3
+        const c31 = getEdgeClip(i3, j3, z3, i1, j1, z1);
+        const c32 = getEdgeClip(i3, j3, z3, i2, j2, z2);
+        return [[c31, c32, idx3]];
+      }
+    }
+
+    // 2 vertices inside, 1 outside: create 2 triangles (quad)
+    // Preserve winding order carefully
+    if (!in1) {
+      // v1 outside, v2 and v3 inside
+      // Original: v1 -> v2 -> v3
+      // Quad vertices in order: clip(2->1), v2, v3, clip(3->1)
+      const c21 = getEdgeClip(i2, j2, z2, i1, j1, z1);
+      const c31 = getEdgeClip(i3, j3, z3, i1, j1, z1);
+      return [
+        [c21, idx2, idx3],
+        [c21, idx3, c31]
+      ];
+    } else if (!in2) {
+      // v2 outside, v1 and v3 inside
+      // Original: v1 -> v2 -> v3
+      // Quad vertices in order: v1, clip(1->2), clip(3->2), v3
+      const c12 = getEdgeClip(i1, j1, z1, i2, j2, z2);
+      const c32 = getEdgeClip(i3, j3, z3, i2, j2, z2);
+      return [
+        [idx1, c12, c32],
+        [idx1, c32, idx3]
+      ];
+    } else {
+      // v3 outside, v1 and v2 inside
+      // Original: v1 -> v2 -> v3
+      // Quad vertices in order: v1, v2, clip(2->3), clip(1->3)
+      const c23 = getEdgeClip(i2, j2, z2, i3, j3, z3);
+      const c13 = getEdgeClip(i1, j1, z1, i3, j3, z3);
+      return [
+        [idx1, idx2, c23],
+        [idx1, c23, c13]
+      ];
+    }
+  };
+
+  // Create triangles with proper clipping
   for (let i = 0; i < resolution; i++) {
     for (let j = 0; j < resolution; j++) {
-      const a = i * (resolution + 1) + j;
-      const b = a + 1;
-      const c = a + (resolution + 1);
-      const d = c + 1;
+      const a = getVertexIndex(i, j);
+      const b = getVertexIndex(i, j + 1);
+      const c = getVertexIndex(i + 1, j);
+      const d = getVertexIndex(i + 1, j + 1);
 
-      // Only create triangles if at least some vertices are valid
       const zA = zValues[i][j];
       const zB = zValues[i][j + 1];
       const zC = zValues[i + 1][j];
       const zD = zValues[i + 1][j + 1];
 
-      // Skip triangles where all vertices are undefined
-      // Use consistent counterclockwise winding for proper normals
-      if (zA !== null || zB !== null || zC !== null) {
-        indices.push(a, c, b);
+      // Triangle 1: a-c-b
+      if (zA !== null && zC !== null && zB !== null) {
+        const clipped = clipTriangle(
+          a, i, j, zA,
+          c, i + 1, j, zC,
+          b, i, j + 1, zB
+        );
+        for (const tri of clipped) {
+          indices.push(tri[0], tri[1], tri[2]);
+        }
       }
-      if (zB !== null || zC !== null || zD !== null) {
-        indices.push(b, c, d);
+
+      // Triangle 2: b-c-d
+      if (zB !== null && zC !== null && zD !== null) {
+        const clipped = clipTriangle(
+          b, i, j + 1, zB,
+          c, i + 1, j, zC,
+          d, i + 1, j + 1, zD
+        );
+        for (const tri of clipped) {
+          indices.push(tri[0], tri[1], tri[2]);
+        }
       }
     }
+  }
+
+  // Add extra vertices to the geometry arrays
+  for (let i = 0; i < extraVertices.length; i++) {
+    vertices.push(extraVertices[i]);
+  }
+  for (let i = 0; i < extraColors.length; i++) {
+    colors.push(extraColors[i]);
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -233,7 +418,8 @@ export function calculateZRange(
   expression: string,
   xRange: [number, number],
   yRange: [number, number],
-  resolution: number
+  resolution: number,
+  zClipRange?: [number, number]
 ): { zMin: number; zMax: number } | null {
   try {
     const evaluate = createEvaluator(expression);
@@ -242,6 +428,8 @@ export function calculateZRange(
     const xStep = (xMax - xMin) / resolution;
     const yStep = (yMax - yMin) / resolution;
 
+    const extremeCap = 1e6;
+
     let zMin = Infinity;
     let zMax = -Infinity;
 
@@ -249,7 +437,19 @@ export function calculateZRange(
       for (let j = 0; j <= resolution; j++) {
         const x = xMin + i * xStep;
         const y = yMin + j * yStep;
-        const z = evaluate(x, y);
+        let z = evaluate(x, y);
+
+        // Only filter out truly extreme/infinite values
+        if (z !== null && (Math.abs(z) > extremeCap || !isFinite(z))) {
+          z = null;
+        }
+
+        // Filter out values outside user-specified range
+        if (z !== null && zClipRange) {
+          if (z < zClipRange[0] || z > zClipRange[1]) {
+            z = null;
+          }
+        }
 
         if (z !== null) {
           zMin = Math.min(zMin, z);

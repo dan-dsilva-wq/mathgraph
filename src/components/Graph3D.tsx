@@ -20,6 +20,7 @@ interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
   yRange: [number, number];
+  zRange?: [number, number]; // User-specified z range for clipping
   resolution?: number;
   showSurfaceGrid?: boolean;
   onZRangeChange?: (zMin: number, zMax: number) => void;
@@ -35,6 +36,7 @@ export default function Graph3D({
   expressions,
   xRange,
   yRange,
+  zRange,
   resolution = 60,
   showSurfaceGrid = false,
   onZRangeChange,
@@ -477,12 +479,18 @@ export default function Graph3D({
       let globalZMax = -Infinity;
 
       validExpressions.forEach(({ expression }) => {
-        const range = calculateZRange(expression, xRange, yRange, resolution);
+        const range = calculateZRange(expression, xRange, yRange, resolution, zRange);
         if (range) {
           globalZMin = Math.min(globalZMin, range.zMin);
           globalZMax = Math.max(globalZMax, range.zMax);
         }
       });
+
+      // If user specified a z range, use that for the global bounds
+      if (zRange) {
+        globalZMin = zRange[0];
+        globalZMax = zRange[1];
+      }
 
       // Handle case where all surfaces have same z or no valid z values
       if (!isFinite(globalZMin) || !isFinite(globalZMax)) {
@@ -516,6 +524,7 @@ export default function Graph3D({
             functionIndex: originalIndex, // Use original index for consistent colors
             globalZMin,
             globalZMax,
+            zClipRange: zRange, // Pass user z range for clipping
           });
 
           allCriticalPoints = [...allCriticalPoints, ...points];
@@ -654,7 +663,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, resolution, showSurfaceGrid, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">
