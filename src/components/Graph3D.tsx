@@ -58,14 +58,11 @@ export default function Graph3D({
   const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
 
-  // Calculate ideal camera distance based on range
+  // Calculate ideal camera distance based on normalized visual size
   const getIdealCameraDistance = useCallback(() => {
-    const xSpan = Math.abs(xRange[1] - xRange[0]);
-    const ySpan = Math.abs(yRange[1] - yRange[0]);
-    const maxSpan = Math.max(xSpan, ySpan);
-    // Camera should be about 1.5x the span away for a good view
-    return Math.max(maxSpan * 1.5, 10);
-  }, [xRange, yRange]);
+    // Surface is normalized to visual size of 10, so use fixed camera distance
+    return 15;
+  }, []);
 
   // Reset camera to default view
   const resetView = useCallback(() => {
@@ -298,12 +295,11 @@ export default function Graph3D({
 
     const helpersGroup = new THREE.Group();
 
-    // Calculate size based on ranges - make grid larger than the data range
-    const xSpan = Math.abs(xRange[1] - xRange[0]);
-    const ySpan = Math.abs(yRange[1] - yRange[0]);
-    const maxSpan = Math.max(xSpan, ySpan);
-    const axisLength = maxSpan * 1.2;
-    const gridSize = maxSpan * 2;
+    // Use fixed visual size that matches the normalized surface coordinates
+    // Surface is normalized to targetVisualSize=10 in surface3D.ts
+    const visualSize = 10;
+    const axisLength = visualSize * 0.6; // Axes extend to 60% of visual size
+    const gridSize = visualSize; // Grid covers the visual area
     const gridDivisions = 20;
 
     // Grid at z=0 level (positioned using zeroPlaneY from surface generation)
@@ -400,8 +396,8 @@ export default function Graph3D({
         depthTest: false
       });
       const sprite = new THREE.Sprite(material);
-      // Scale labels based on range
-      const labelScale = maxSpan * 0.08;
+      // Scale labels based on visual size
+      const labelScale = visualSize * 0.08;
       sprite.scale.set(labelScale, labelScale, 1);
       return sprite;
     };
@@ -631,14 +627,14 @@ export default function Graph3D({
         const color = point.type === 'maximum' ? 0x00cc00 : 0xff3333;
         const sphereMat = new THREE.MeshBasicMaterial({ color });
         const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-        sphere.position.set(point.x, point.scaledZ, point.y);
+        sphere.position.set(point.scaledX, point.scaledZ, point.scaledY);
         criticalPointsGroup.add(sphere);
 
         // Coordinate label above the sphere
         const label = createCoordLabel(point);
         const labelScale = maxSpan * 0.12;
         label.scale.set(labelScale, labelScale / 2, 1);
-        label.position.set(point.x, point.scaledZ + markerSize * 3, point.y);
+        label.position.set(point.scaledX, point.scaledZ + markerSize * 3, point.scaledY);
         criticalPointsGroup.add(label);
       });
 

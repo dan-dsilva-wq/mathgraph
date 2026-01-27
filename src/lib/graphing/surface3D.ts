@@ -17,6 +17,8 @@ export interface CriticalPoint {
   x: number;
   y: number;
   z: number;
+  scaledX: number; // For 3D positioning
+  scaledY: number; // For 3D positioning
   scaledZ: number; // For 3D positioning
   type: 'minimum' | 'maximum' | 'saddle';
 }
@@ -41,10 +43,12 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   const xStep = (xMax - xMin) / resolution;
   const yStep = (yMax - yMin) / resolution;
 
-  // Calculate the visual scale based on x/y ranges
+  // Calculate spans for each dimension
   const xSpan = xMax - xMin;
   const ySpan = yMax - yMin;
-  const targetZSpan = Math.max(xSpan, ySpan); // Z should fit proportionally
+
+  // Target visual size - normalize everything to this scale for consistent rendering
+  const targetVisualSize = 10;
 
   // First pass: calculate all z values and find min/max
   // DON'T clip to zClipRange here - we need original values for interpolation
@@ -103,26 +107,35 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   const effectiveZMin = globalZMin !== undefined ? globalZMin : zMin;
   const effectiveZMax = globalZMax !== undefined ? globalZMax : zMax;
 
-  // Calculate z scaling factor to fit proportionally
+  // Calculate scaling factors to normalize all dimensions to targetVisualSize
+  // This ensures consistent rendering regardless of input range sizes
+  const xScale = xSpan > 0 ? targetVisualSize / xSpan : 1;
+  const yScale = ySpan > 0 ? targetVisualSize / ySpan : 1;
   const actualZSpan = effectiveZMax - effectiveZMin;
-  const zScale = actualZSpan > 0 ? targetZSpan / actualZSpan : 1;
-  const zOffset = (effectiveZMin + effectiveZMax) / 2; // Center the surface
+  const zScale = actualZSpan > 0 ? targetVisualSize / actualZSpan : 1;
 
-  // Second pass: build geometry with scaled z values
+  // Center offsets for each dimension
+  const xOffset = (xMin + xMax) / 2;
+  const yOffset = (yMin + yMax) / 2;
+  const zOffset = (effectiveZMin + effectiveZMax) / 2;
+
+  // Second pass: build geometry with normalized coordinates
   const vertices: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
 
-  // Create vertices
+  // Create vertices - all dimensions normalized to targetVisualSize centered at origin
   for (let i = 0; i <= resolution; i++) {
     for (let j = 0; j <= resolution; j++) {
       const x = xMin + i * xStep;
       const y = yMin + j * yStep;
       const z = zValues[i][j];
 
-      // Scale and center z values for better visualization
+      // Normalize all coordinates to consistent visual scale
+      const scaledX = (x - xOffset) * xScale;
+      const scaledY = (y - yOffset) * yScale;
       const scaledZ = z !== null ? (z - zOffset) * zScale : 0;
-      vertices.push(x, scaledZ, y);
+      vertices.push(scaledX, scaledZ, scaledY);
 
       // Color based on original z value (not scaled), using function-specific palette
       const color = z !== null ? getColorForZWithPalette(z, zMin, zMax, functionIndex) : getUndefinedColor();
@@ -156,9 +169,13 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
 
     const x = x1 + t * (x2 - x1);
     const y = y1 + t * (y2 - y1);
+
+    // Normalize coordinates to match the main vertex generation
+    const scaledX = (x - xOffset) * xScale;
+    const scaledY = (y - yOffset) * yScale;
     const scaledZ = (zBoundary - zOffset) * zScale;
 
-    extraVertices.push(x, scaledZ, y);
+    extraVertices.push(scaledX, scaledZ, scaledY);
 
     const color = getColorForZWithPalette(zBoundary, zMin, zMax, functionIndex);
     extraColors.push(color.r, color.g, color.b);
@@ -345,11 +362,15 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   if (globalMinPoint) {
     const x = xMin + globalMinPoint.i * xStep;
     const y = yMin + globalMinPoint.j * yStep;
+    const scaledX = (x - xOffset) * xScale;
+    const scaledY = (y - yOffset) * yScale;
     const scaledZ = (globalMinPoint.z - zOffset) * zScale;
     criticalPoints.push({
       x,
       y,
       z: globalMinPoint.z,
+      scaledX,
+      scaledY,
       scaledZ,
       type: 'minimum',
     });
@@ -359,11 +380,15 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   if (globalMaxPoint && (!globalMinPoint || globalMaxPoint.z !== globalMinPoint.z)) {
     const x = xMin + globalMaxPoint.i * xStep;
     const y = yMin + globalMaxPoint.j * yStep;
+    const scaledX = (x - xOffset) * xScale;
+    const scaledY = (y - yOffset) * yScale;
     const scaledZ = (globalMaxPoint.z - zOffset) * zScale;
     criticalPoints.push({
       x,
       y,
       z: globalMaxPoint.z,
+      scaledX,
+      scaledY,
       scaledZ,
       type: 'maximum',
     });
