@@ -111,9 +111,21 @@ function Graph3DPage() {
   const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [highResolution, setHighResolution] = useState(false);
+  const [isLoadingHD, setIsLoadingHD] = useState(false);
 
   // Resolution: 60 for normal, 300 for high (much smoother but slower)
   const resolution = highResolution ? 300 : 60;
+
+  // Handle HD toggle with loading state
+  const toggleHighResolution = useCallback(() => {
+    setIsLoadingHD(true);
+    // Use setTimeout to allow the UI to update before the expensive render
+    setTimeout(() => {
+      setHighResolution(prev => !prev);
+      // Clear loading state after a brief moment (render will have started)
+      setTimeout(() => setIsLoadingHD(false), 100);
+    }, 10);
+  }, []);
 
   // Load recent equations and current expressions from localStorage after mount (avoids hydration mismatch)
   useEffect(() => {
@@ -836,15 +848,25 @@ function Graph3DPage() {
           </div>
           {/* High resolution toggle button */}
           <button
-            onClick={() => setHighResolution(!highResolution)}
+            onClick={toggleHighResolution}
+            disabled={isLoadingHD}
             className={`absolute top-6 right-20 p-2 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border ${
-              highResolution
-                ? 'bg-blue-600/80 hover:bg-blue-500 border-blue-500/50'
-                : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700/50'
+              isLoadingHD
+                ? 'bg-amber-600/80 border-amber-500/50 cursor-wait'
+                : highResolution
+                  ? 'bg-blue-600/80 hover:bg-blue-500 border-blue-500/50'
+                  : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700/50'
             }`}
             title={highResolution ? 'Switch to normal resolution (60×60)' : 'Switch to high resolution (300×300)'}
           >
-            <span className="text-xs font-medium">HD</span>
+            {isLoadingHD ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <span className="text-xs font-medium">HD</span>
+            )}
           </button>
           {/* Fullscreen toggle button */}
           <button
