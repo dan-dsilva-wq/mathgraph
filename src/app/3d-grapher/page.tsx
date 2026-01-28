@@ -19,16 +19,6 @@ const Graph3D = dynamic(() => import('@/components/Graph3D'), {
   ),
 });
 
-// Dynamically import Graph2D for mini intersection preview
-const Graph2D = dynamic(() => import('@/components/Graph2D'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-slate-800 rounded">
-      <div className="text-slate-500 text-xs">Loading...</div>
-    </div>
-  ),
-});
-
 // Collapsible section component
 function CollapsibleSection({
   title,
@@ -707,31 +697,6 @@ function Graph3DPage() {
                       <div className="text-sm text-white overflow-x-auto custom-scrollbar py-1">
                         <InlineMath math={intersection.simplified} />
                       </div>
-
-                      {/* Mini 2D Graph Preview */}
-                      {hasValidIntersection && (
-                        <div className="mt-2">
-                          <div className="text-[10px] text-slate-500 mb-1">
-                            2D Preview ({intersection.solvedFor === 'x' ? 'x vs y' : 'y vs x'}){intersection.hasPlusMinus && ' - both ± branches'}:
-                          </div>
-                          <div className="h-48 bg-slate-900 rounded overflow-hidden border border-slate-700">
-                            <Graph2D
-                              expressions={
-                                intersection.hasPlusMinus && intersection.rawExpressionNeg
-                                  ? [
-                                      { expression: intersection.rawExpression, originalIndex: 0 },
-                                      { expression: intersection.rawExpressionNeg, originalIndex: 1 }
-                                    ]
-                                  : [{ expression: intersection.rawExpression, originalIndex: 0 }]
-                              }
-                              xRange={xRange}
-                              yRange={[-10, 10]}
-                              mini={true}
-                              swapAxes={intersection.solvedFor === 'x'}
-                            />
-                          </div>
-                        </div>
-                      )}
 
                       <button
                         onClick={() => setShowIntersectionWorking(!showIntersectionWorking)}
