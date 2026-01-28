@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { createEvaluator, createDerivativeEvaluators } from '../mathParser';
 import { getColorForZWithPalette, getUndefinedColor } from './colors';
+import {
+  IntegrationResult,
+  calculateSurfaceAreaAdaptive,
+  calculateVolumeAdaptive,
+  isPolynomial,
+  integratePolynomialVolume
+} from '../integration';
 
 interface SurfaceOptions {
   expression: string;
@@ -29,8 +36,19 @@ interface SurfaceResult {
   zMax: number;
   criticalPoints: CriticalPoint[];
   surfaceArea: number;
+  surfaceAreaResult: IntegrationResult; // Detailed result with accuracy info
   volume: number; // Volume under the surface (above z=0)
+  volumeResult: IntegrationResult; // Detailed result with accuracy info
   zeroPlaneY: number; // Where z=0 is in Three.js Y coordinates
+  // Transformation parameters for converting visual coords back to math coords
+  transform: {
+    xScale: number;
+    yScale: number;
+    zScale: number;
+    xOffset: number;
+    yOffset: number;
+    zOffset: number;
+  };
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
@@ -518,48 +536,78 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     }
   }
 
-  // Calculate surface area by summing triangle areas
-  let surfaceArea = 0;
-  const positionArray = geometry.getAttribute('position').array;
-  const indexArray = geometry.getIndex()?.array;
+  // Calculate surface area using adaptive Gaussian quadrature
+  // Surface area = ∫∫ √(1 + (∂z/∂x)² + (∂z/∂y)²) dA
+  let surfaceAreaResult: IntegrationResult;
+  if (derivs) {
+    const { dzdx, dzdy } = derivs;
+    surfaceAreaResult = calculateSurfaceAreaAdaptive(
+      evaluate,
+      dzdx,
+      dzdy,
+      xRange,
+      yRange,
+      1e-3,  // tolerance (relaxed for UI responsiveness)
+      4      // maxDepth (reduced for speed)
+    );
+  } else {
+    // Fallback to mesh-based calculation if derivatives unavailable
+    let meshArea = 0;
+    const positionArray = geometry.getAttribute('position').array;
+    const indexArray = geometry.getIndex()?.array;
 
-  if (indexArray) {
-    for (let i = 0; i < indexArray.length; i += 3) {
-      const i0 = indexArray[i] * 3;
-      const i1 = indexArray[i + 1] * 3;
-      const i2 = indexArray[i + 2] * 3;
+    if (indexArray) {
+      for (let i = 0; i < indexArray.length; i += 3) {
+        const i0 = indexArray[i] * 3;
+        const i1 = indexArray[i + 1] * 3;
+        const i2 = indexArray[i + 2] * 3;
 
-      const v0 = new THREE.Vector3(positionArray[i0], positionArray[i0 + 1], positionArray[i0 + 2]);
-      const v1 = new THREE.Vector3(positionArray[i1], positionArray[i1 + 1], positionArray[i1 + 2]);
-      const v2 = new THREE.Vector3(positionArray[i2], positionArray[i2 + 1], positionArray[i2 + 2]);
+        const v0 = new THREE.Vector3(positionArray[i0], positionArray[i0 + 1], positionArray[i0 + 2]);
+        const v1 = new THREE.Vector3(positionArray[i1], positionArray[i1 + 1], positionArray[i1 + 2]);
+        const v2 = new THREE.Vector3(positionArray[i2], positionArray[i2 + 1], positionArray[i2 + 2]);
 
-      // Triangle area = 0.5 * |AB x AC|
-      const ab = new THREE.Vector3().subVectors(v1, v0);
-      const ac = new THREE.Vector3().subVectors(v2, v0);
-      const cross = new THREE.Vector3().crossVectors(ab, ac);
-      surfaceArea += cross.length() * 0.5;
-    }
-  }
-
-  // Calculate volume under the surface using the trapezoidal rule
-  // Volume = ∫∫ z(x,y) dA ≈ Σ z_i * ΔA
-  let volume = 0;
-  const cellArea = xStep * yStep;
-
-  for (let i = 0; i <= resolution; i++) {
-    for (let j = 0; j <= resolution; j++) {
-      const z = zValues[i][j];
-      if (z !== null) {
-        // Use absolute value for total volume (both above and below z=0)
-        volume += Math.abs(z) * cellArea;
+        const ab = new THREE.Vector3().subVectors(v1, v0);
+        const ac = new THREE.Vector3().subVectors(v2, v0);
+        const cross = new THREE.Vector3().crossVectors(ab, ac);
+        meshArea += cross.length() * 0.5;
       }
     }
+    surfaceAreaResult = {
+      value: meshArea,
+      error: Infinity,
+      isExact: false,
+      method: 'mesh'
+    };
   }
+  const surfaceArea = surfaceAreaResult.value;
+
+  // Calculate volume under the surface using adaptive integration or symbolic for polynomials
+  // Volume = ∫∫ |z(x,y)| dA
+  let volumeResult: IntegrationResult;
+
+  // Try symbolic integration for polynomials first (exact result)
+  const symbolicVolume = integratePolynomialVolume(expression, xRange, yRange);
+  if (symbolicVolume !== null) {
+    volumeResult = symbolicVolume;
+  } else {
+    // Fall back to adaptive numerical integration
+    volumeResult = calculateVolumeAdaptive(
+      evaluate,
+      xRange,
+      yRange,
+      1e-3,  // tolerance (relaxed for UI responsiveness)
+      4      // maxDepth (reduced for speed)
+    );
+  }
+  const volume = volumeResult.value;
 
   // Calculate where z=0 is in Three.js Y coordinates
   const zeroPlaneY = (0 - zOffset) * zScale;
 
-  return { geometry, zMin, zMax, criticalPoints, surfaceArea, volume, zeroPlaneY };
+  // Return transformation parameters for hover coordinate conversion
+  const transform = { xScale, yScale, zScale, xOffset, yOffset, zOffset };
+
+  return { geometry, zMin, zMax, criticalPoints, surfaceArea, surfaceAreaResult, volume, volumeResult, zeroPlaneY, transform };
 }
 
 // Quick z-range calculation without full geometry generation

@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import RangeControls from '@/components/RangeControls';
 import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives } from '@/lib/mathParser';
+import { IntegrationResult, calculateVolumeBetweenAdaptive, integratePolynomialVolumeBetween } from '@/lib/integration';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -98,7 +99,7 @@ function Graph3DPage() {
   const [userZRange, setUserZRange] = useState<[number, number]>([-5, 5]);
   const [autoZRange, setAutoZRange] = useState(false);
   const [stats, setStats] = useState<{
-    surfaceAreas: { expression: string; originalIndex: number; surfaceArea: number }[];
+    surfaceAreas: { expression: string; originalIndex: number; surfaceArea: number; surfaceAreaResult: IntegrationResult; volumeResult: IntegrationResult }[];
     volume: number;
     globalMin: { x: number; y: number; z: number } | null;
     globalMax: { x: number; y: number; z: number } | null;
@@ -108,6 +109,7 @@ function Graph3DPage() {
   const [showVolumeWorking, setShowVolumeWorking] = useState(false);
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
+  const [volumeBetweenResult, setVolumeBetweenResult] = useState<IntegrationResult | null>(null);
   const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [highResolution, setHighResolution] = useState(false);
@@ -292,51 +294,48 @@ function Graph3DPage() {
   // Helper to get just the expression strings from activeExpressions
   const activeExpressionStrings = activeExpressions.map(e => e.expression);
 
-  // Calculate volume between two surfaces
-  const calculateVolumeBetween = useCallback((expr1: string, expr2: string) => {
+  // Calculate volume between two surfaces using adaptive integration
+  const calculateVolumeBetween = useCallback((expr1: string, expr2: string): IntegrationResult | null => {
     try {
+      // Try symbolic integration for polynomials first (exact result)
+      const symbolicResult = integratePolynomialVolumeBetween(expr1, expr2, xRange, yRange);
+      if (symbolicResult !== null) {
+        return symbolicResult;
+      }
+
+      // Fall back to adaptive numerical integration
       const eval1 = createEvaluator(expr1);
       const eval2 = createEvaluator(expr2);
 
-      const [xMin, xMax] = xRange;
-      const [yMin, yMax] = yRange;
-      const xStep = (xMax - xMin) / resolution;
-      const yStep = (yMax - yMin) / resolution;
-      const cellArea = xStep * yStep;
-
-      let volume = 0;
-      // Use midpoint rule for better accuracy: sample at center of each cell
-      for (let i = 0; i < resolution; i++) {
-        for (let j = 0; j < resolution; j++) {
-          // Sample at midpoint of cell for better integration accuracy
-          const x = xMin + (i + 0.5) * xStep;
-          const y = yMin + (j + 0.5) * yStep;
-          const z1 = eval1(x, y);
-          const z2 = eval2(x, y);
-          if (z1 !== null && z2 !== null) {
-            volume += Math.abs(z1 - z2) * cellArea;
-          }
-        }
-      }
-      return volume;
+      return calculateVolumeBetweenAdaptive(
+        eval1,
+        eval2,
+        xRange,
+        yRange,
+        1e-3,  // tolerance (relaxed for UI responsiveness)
+        4      // maxDepth (reduced for speed)
+      );
     } catch {
       return null;
     }
-  }, [xRange, yRange, resolution]);
+  }, [xRange, yRange]);
 
   // Update volume when in volume mode and expressions change
   useEffect(() => {
     if (volumeMode && activeExpressionStrings.length >= 2) {
-      const vol = calculateVolumeBetween(activeExpressionStrings[0], activeExpressionStrings[1]);
-      setVolumeBetweenSurfaces(vol);
+      const result = calculateVolumeBetween(activeExpressionStrings[0], activeExpressionStrings[1]);
+      setVolumeBetweenResult(result);
+      setVolumeBetweenSurfaces(result?.value ?? null);
     } else {
       setVolumeBetweenSurfaces(null);
+      setVolumeBetweenResult(null);
       // Reset volume mode if we don't have 2 expressions anymore
       if (volumeMode && activeExpressionStrings.length < 2) {
         setVolumeMode(false);
       }
     }
-  }, [volumeMode, activeExpressionStrings, calculateVolumeBetween]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [volumeMode, activeExpressionStrings.join('|'), xRange[0], xRange[1], yRange[0], yRange[1]]);
 
   // Auto-update graph when expressions change (debounced)
   useEffect(() => {
@@ -531,7 +530,7 @@ function Graph3DPage() {
                     </div>
                     {stats.globalMin ? (
                       <span className="text-xs font-mono text-slate-300">
-                        ({stats.globalMin.x.toFixed(3)}, {stats.globalMin.y.toFixed(3)}, {stats.globalMin.z.toFixed(3)})
+                        ({stats.globalMin.x.toFixed(2)}, {stats.globalMin.y.toFixed(2)}, {stats.globalMin.z.toFixed(2)})
                       </span>
                     ) : (
                       <span className="text-xs text-slate-500">—</span>
@@ -544,7 +543,7 @@ function Graph3DPage() {
                     </div>
                     {stats.globalMax ? (
                       <span className="text-xs font-mono text-slate-300">
-                        ({stats.globalMax.x.toFixed(3)}, {stats.globalMax.y.toFixed(3)}, {stats.globalMax.z.toFixed(3)})
+                        ({stats.globalMax.x.toFixed(2)}, {stats.globalMax.y.toFixed(2)}, {stats.globalMax.z.toFixed(2)})
                       </span>
                     ) : (
                       <span className="text-xs text-slate-500">—</span>
@@ -570,19 +569,39 @@ function Graph3DPage() {
                     {stats.surfaceAreas.map((surface, idx) => {
                       const derivs = getPartialDerivatives(surface.expression);
                       return (
-                        <div key={idx} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: getFunctionColor(surface.originalIndex) }}
-                            />
-                            <span className="text-xs text-slate-400 truncate max-w-[100px]">
-                              {surface.expression}
-                            </span>
+                        <div key={idx} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: getFunctionColor(surface.originalIndex) }}
+                              />
+                              <span className="text-xs text-slate-400 truncate max-w-[100px]">
+                                {surface.expression}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-mono text-slate-300">
+                                {surface.surfaceArea.toFixed(2)} units²
+                              </span>
+                              <span
+                                className={`text-[9px] px-1 py-0.5 rounded ${
+                                  surface.surfaceAreaResult.isExact
+                                    ? 'bg-green-600/30 text-green-400 border border-green-500/30'
+                                    : surface.surfaceAreaResult.method === 'mesh'
+                                      ? 'bg-orange-600/30 text-orange-400 border border-orange-500/30'
+                                      : 'bg-yellow-600/30 text-yellow-400 border border-yellow-500/30'
+                                }`}
+                                title={surface.surfaceAreaResult.isExact
+                                  ? 'Exact result'
+                                  : surface.surfaceAreaResult.method === 'mesh'
+                                    ? 'Mesh approximation (less accurate)'
+                                    : `Adaptive integration (error: ~${surface.surfaceAreaResult.error.toExponential(1)})`}
+                              >
+                                {surface.surfaceAreaResult.isExact ? 'exact' : '~'}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-xs font-mono text-slate-300">
-                            {surface.surfaceArea.toFixed(2)} units²
-                          </span>
                         </div>
                       );
                     })}
@@ -595,6 +614,13 @@ function Graph3DPage() {
                     {showSurfaceAreaWorking && (
                       <div className="text-[10px] text-slate-500 overflow-x-auto custom-scrollbar">
                         <InlineMath math="A = \iint_D \sqrt{1 + z_x^2 + z_y^2} \, dA" />
+                        <div className="text-slate-600 mt-1">
+                          {stats.surfaceAreas[0]?.surfaceAreaResult.method === 'adaptive'
+                            ? '(adaptive Gaussian quadrature)'
+                            : stats.surfaceAreas[0]?.surfaceAreaResult.method === 'gaussian'
+                              ? '(Gaussian quadrature)'
+                              : '(mesh triangulation)'}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -664,8 +690,24 @@ function Graph3DPage() {
                             </div>
                           ))}
                         </div>
-                        <div className="text-lg font-mono text-white">
-                          V = {volumeBetweenSurfaces !== null ? volumeBetweenSurfaces.toFixed(4) : '...'} units³
+                        <div className="flex items-center gap-2">
+                          <div className="text-lg font-mono text-white">
+                            V = {volumeBetweenSurfaces !== null ? volumeBetweenSurfaces.toFixed(2) : '...'} units³
+                          </div>
+                          {volumeBetweenResult && (
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                volumeBetweenResult.isExact
+                                  ? 'bg-green-600/30 text-green-400 border border-green-500/30'
+                                  : 'bg-yellow-600/30 text-yellow-400 border border-yellow-500/30'
+                              }`}
+                              title={volumeBetweenResult.isExact
+                                ? 'Exact symbolic integration'
+                                : `Adaptive integration (error: ~${volumeBetweenResult.error.toExponential(1)})`}
+                            >
+                              {volumeBetweenResult.isExact ? 'exact' : '~approx'}
+                            </span>
+                          )}
                         </div>
                         <button
                           onClick={() => setShowVolumeWorking(!showVolumeWorking)}
@@ -676,7 +718,13 @@ function Graph3DPage() {
                         {showVolumeWorking && (
                           <div className="text-[10px] text-slate-500 space-y-1 overflow-x-auto custom-scrollbar">
                             <InlineMath math="V = \iint_D |z_1 - z_2| \, dA" />
-                            <div className="text-slate-600">(60×60 midpoint rule)</div>
+                            <div className="text-slate-600">
+                              {volumeBetweenResult?.method === 'symbolic'
+                                ? '(symbolic polynomial integration)'
+                                : volumeBetweenResult?.method === 'adaptive'
+                                  ? '(adaptive Gaussian quadrature)'
+                                  : '(Gaussian quadrature)'}
+                            </div>
                           </div>
                         )}
                       </>

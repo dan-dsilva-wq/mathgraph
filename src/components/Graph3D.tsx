@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateSurface, calculateZRange, CriticalPoint } from '@/lib/graphing/surface3D';
+import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
   expression: string;
@@ -14,6 +15,8 @@ interface SurfaceStats {
   expression: string;
   originalIndex: number;
   surfaceArea: number;
+  surfaceAreaResult: IntegrationResult;
+  volumeResult: IntegrationResult;
 }
 
 interface Graph3DProps {
@@ -57,6 +60,15 @@ export default function Graph3D({
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; z: number; screenX: number; screenY: number } | null>(null);
   const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
+  // Store transform for converting hover coords back to math coords
+  const transformRef = useRef<{
+    xScale: number;
+    yScale: number;
+    zScale: number;
+    xOffset: number;
+    yOffset: number;
+    zOffset: number;
+  } | null>(null);
 
   // Calculate ideal camera distance based on normalized visual size
   const getIdealCameraDistance = useCallback(() => {
@@ -226,11 +238,25 @@ export default function Graph3D({
 
       if (intersects.length > 0) {
         const point = intersects[0].point;
-        // In Three.js: x = math x, y = math z (height), z = math y
+        const t = transformRef.current;
+
+        // Convert from visual coordinates back to math coordinates
+        // In Three.js: x = scaled math x, y = scaled math z, z = scaled math y
+        let mathX = point.x;
+        let mathY = point.z; // Three.js Z is math Y
+        let mathZ = point.y; // Three.js Y is math Z
+
+        if (t) {
+          // Reverse the scaling: mathCoord = (visualCoord / scale) + offset
+          mathX = (point.x / t.xScale) + t.xOffset;
+          mathY = (point.z / t.yScale) + t.yOffset;
+          mathZ = (point.y / t.zScale) + t.zOffset;
+        }
+
         setHoverPoint({
-          x: point.x,
-          y: point.z, // Math Y is Three.js Z
-          z: point.y, // Math Z is Three.js Y
+          x: mathX,
+          y: mathY,
+          z: mathZ,
           screenX: event.clientX - rect.left,
           screenY: event.clientY - rect.top,
         });
@@ -470,22 +496,45 @@ export default function Graph3D({
     try {
       setError(null);
 
-      // First pass: Calculate global z range across all expressions
-      let globalZMin = Infinity;
-      let globalZMax = -Infinity;
+      // First pass: Calculate ACTUAL z range across all expressions (without clip filter)
+      let actualZMin = Infinity;
+      let actualZMax = -Infinity;
 
       validExpressions.forEach(({ expression }) => {
-        const range = calculateZRange(expression, xRange, yRange, resolution, zRange);
+        const range = calculateZRange(expression, xRange, yRange, resolution); // No clip filter
         if (range) {
-          globalZMin = Math.min(globalZMin, range.zMin);
-          globalZMax = Math.max(globalZMax, range.zMax);
+          actualZMin = Math.min(actualZMin, range.zMin);
+          actualZMax = Math.max(actualZMax, range.zMax);
         }
       });
 
-      // If user specified a z range, use that for the global bounds
+      // Check if surface would be entirely invisible with current z clip range
+      // If so, auto-trigger z-range update to make it visible
+      if (zRange && isFinite(actualZMin) && isFinite(actualZMax)) {
+        const surfaceEntirelyAbove = actualZMin > zRange[1];
+        const surfaceEntirelyBelow = actualZMax < zRange[0];
+
+        if (surfaceEntirelyAbove || surfaceEntirelyBelow) {
+          // Surface is entirely outside clip range - auto-adjust
+          if (onZRangeChange) {
+            onZRangeChange(actualZMin, actualZMax);
+          }
+          // Use actual range for this render
+        }
+      }
+
+      // Use clip range if specified and surface is at least partially visible
+      let globalZMin = actualZMin;
+      let globalZMax = actualZMax;
+
       if (zRange) {
-        globalZMin = zRange[0];
-        globalZMax = zRange[1];
+        // Check if there's any overlap between actual range and clip range
+        const hasOverlap = !(actualZMax < zRange[0] || actualZMin > zRange[1]);
+        if (hasOverlap) {
+          globalZMin = zRange[0];
+          globalZMax = zRange[1];
+        }
+        // If no overlap, use actual range (auto-adjusted above)
       }
 
       // Handle case where all surfaces have same z or no valid z values
@@ -512,7 +561,7 @@ export default function Graph3D({
       // Second pass: Generate surface for each expression using global z range
       validExpressions.forEach(({ expression, originalIndex }, index) => {
         try {
-          const { geometry, criticalPoints: points, surfaceArea: area, volume: vol, zeroPlaneY: zPlane } = generateSurface({
+          const { geometry, criticalPoints: points, surfaceArea: area, surfaceAreaResult: areaResult, volume: vol, volumeResult: volResult, zeroPlaneY: zPlane, transform } = generateSurface({
             expression,
             xRange,
             yRange,
@@ -523,8 +572,13 @@ export default function Graph3D({
             zClipRange: zRange, // Pass user z range for clipping
           });
 
+          // Store transform for hover coordinate conversion (use first surface's transform)
+          if (index === 0) {
+            transformRef.current = transform;
+          }
+
           allCriticalPoints = [...allCriticalPoints, ...points];
-          surfaceAreas.push({ expression, originalIndex, surfaceArea: area });
+          surfaceAreas.push({ expression, originalIndex, surfaceArea: area, surfaceAreaResult: areaResult, volumeResult: volResult });
           totalVolume += vol;
 
           // Use the first function's zero plane for grid positioning
