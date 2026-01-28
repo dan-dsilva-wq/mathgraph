@@ -536,22 +536,8 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     }
   }
 
-  // Calculate surface area using adaptive Gaussian quadrature
-  // Surface area = ∫∫ √(1 + (∂z/∂x)² + (∂z/∂y)²) dA
-  let surfaceAreaResult: IntegrationResult;
-  if (derivs) {
-    const { dzdx, dzdy } = derivs;
-    surfaceAreaResult = calculateSurfaceAreaAdaptive(
-      evaluate,
-      dzdx,
-      dzdy,
-      xRange,
-      yRange,
-      1e-3,  // tolerance (relaxed for UI responsiveness)
-      4      // maxDepth (reduced for speed)
-    );
-  } else {
-    // Fallback to mesh-based calculation if derivatives unavailable
+  // Helper function to calculate mesh-based surface area (fallback)
+  const calculateMeshSurfaceArea = (): number => {
     let meshArea = 0;
     const positionArray = geometry.getAttribute('position').array;
     const indexArray = geometry.getIndex()?.array;
@@ -572,8 +558,37 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
         meshArea += cross.length() * 0.5;
       }
     }
+    return meshArea;
+  };
+
+  // Calculate surface area using adaptive Gaussian quadrature
+  // Surface area = ∫∫ √(1 + (∂z/∂x)² + (∂z/∂y)²) dA
+  let surfaceAreaResult: IntegrationResult;
+  if (derivs) {
+    const { dzdx, dzdy } = derivs;
+    surfaceAreaResult = calculateSurfaceAreaAdaptive(
+      evaluate,
+      dzdx,
+      dzdy,
+      xRange,
+      yRange,
+      1e-3,  // tolerance (relaxed for UI responsiveness)
+      4      // maxDepth (reduced for speed)
+    );
+
+    // If adaptive integration failed or returned invalid result, fall back to mesh
+    if (!isFinite(surfaceAreaResult.value) || surfaceAreaResult.value <= 0) {
+      surfaceAreaResult = {
+        value: calculateMeshSurfaceArea(),
+        error: Infinity,
+        isExact: false,
+        method: 'mesh'
+      };
+    }
+  } else {
+    // Fallback to mesh-based calculation if derivatives unavailable
     surfaceAreaResult = {
-      value: meshArea,
+      value: calculateMeshSurfaceArea(),
       error: Infinity,
       isExact: false,
       method: 'mesh'

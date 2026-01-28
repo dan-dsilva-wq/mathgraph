@@ -189,9 +189,10 @@ export function adaptiveIntegrate2D(
   const initialFine = integrate2D(f, xRange, yRange, 15);
 
   if (isNaN(initialCoarse) || isNaN(initialFine)) {
-    // Function has too many undefined points, fall back to mesh method
+    // Function has too many undefined points, signal failure with NaN
+    // so caller can fall back to mesh method
     return {
-      value: isNaN(initialFine) ? 0 : initialFine,
+      value: NaN,
       error: Infinity,
       isExact: false,
       method: 'mesh'
