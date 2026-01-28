@@ -402,8 +402,9 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     const gradientThreshold = Math.max(0.3, zRange * 0.05);
     const foundPoints: { x: number; y: number; type: 'minimum' | 'maximum' | 'saddle' }[] = [];
 
-    for (let i = 1; i < resolution && foundPoints.length < 10; i++) {
-      for (let j = 1; j < resolution && foundPoints.length < 10; j++) {
+    // Search for up to 20 candidate points to ensure we find enough of each type
+    for (let i = 1; i < resolution && foundPoints.length < 20; i++) {
+      for (let j = 1; j < resolution && foundPoints.length < 20; j++) {
         const x = xMin + i * xStep;
         const y = yMin + j * yStep;
 
@@ -458,9 +459,34 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       }
     }
 
+    // Round to nice values if very close to common numbers (π, π/2, etc.)
+    const roundToNice = (val: number): number => {
+      const niceValues = [
+        0, Math.PI, -Math.PI, Math.PI / 2, -Math.PI / 2,
+        Math.PI / 3, -Math.PI / 3, Math.PI / 4, -Math.PI / 4,
+        Math.PI / 6, -Math.PI / 6, 2 * Math.PI, -2 * Math.PI,
+        3 * Math.PI / 2, -3 * Math.PI / 2,
+        1, -1, 2, -2, 0.5, -0.5
+      ];
+      for (const nice of niceValues) {
+        if (Math.abs(val - nice) < 1e-10) return nice;
+      }
+      // Round to 10 decimal places to remove floating point noise
+      return Math.round(val * 1e10) / 1e10;
+    };
+
     // Convert found points to CriticalPoints with exact z values
+    // Limit to 3 of each type (3 minima, 3 maxima, 3 saddles)
+    let minCount = 0;
+    let maxCount = 0;
+    let saddleCount = 0;
+    const maxPerType = 3;
+
     for (const pt of foundPoints) {
-      if (criticalPoints.length >= 3) break;
+      // Check if we've hit the limit for this type
+      if (pt.type === 'minimum' && minCount >= maxPerType) continue;
+      if (pt.type === 'maximum' && maxCount >= maxPerType) continue;
+      if (pt.type === 'saddle' && saddleCount >= maxPerType) continue;
 
       const z = evaluate(pt.x, pt.y);
       if (z === null) continue;
@@ -472,22 +498,6 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       const scaledY = (pt.y - yOffset) * yScale;
       const scaledZ = (z - zOffset) * zScale;
 
-      // Round to nice values if very close to common numbers (π, π/2, etc.)
-      const roundToNice = (val: number): number => {
-        const niceValues = [
-          0, Math.PI, -Math.PI, Math.PI / 2, -Math.PI / 2,
-          Math.PI / 3, -Math.PI / 3, Math.PI / 4, -Math.PI / 4,
-          Math.PI / 6, -Math.PI / 6, 2 * Math.PI, -2 * Math.PI,
-          3 * Math.PI / 2, -3 * Math.PI / 2,
-          1, -1, 2, -2, 0.5, -0.5
-        ];
-        for (const nice of niceValues) {
-          if (Math.abs(val - nice) < 1e-10) return nice;
-        }
-        // Round to 10 decimal places to remove floating point noise
-        return Math.round(val * 1e10) / 1e10;
-      };
-
       criticalPoints.push({
         x: roundToNice(pt.x),
         y: roundToNice(pt.y),
@@ -497,6 +507,14 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
         scaledZ,
         type: pt.type,
       });
+
+      // Increment the counter for this type
+      if (pt.type === 'minimum') minCount++;
+      else if (pt.type === 'maximum') maxCount++;
+      else saddleCount++;
+
+      // Stop if we have 3 of each
+      if (minCount >= maxPerType && maxCount >= maxPerType && saddleCount >= maxPerType) break;
     }
   }
 
