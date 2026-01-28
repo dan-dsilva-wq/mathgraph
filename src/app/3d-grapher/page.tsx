@@ -531,7 +531,7 @@ function Graph3DPage() {
                     </div>
                     {stats.globalMin ? (
                       <span className="text-xs font-mono text-slate-300">
-                        ({stats.globalMin.x.toFixed(2)}, {stats.globalMin.y.toFixed(2)}, {stats.globalMin.z.toFixed(2)})
+                        ({stats.globalMin.x.toFixed(3)}, {stats.globalMin.y.toFixed(3)}, {stats.globalMin.z.toFixed(3)})
                       </span>
                     ) : (
                       <span className="text-xs text-slate-500">—</span>
@@ -544,7 +544,7 @@ function Graph3DPage() {
                     </div>
                     {stats.globalMax ? (
                       <span className="text-xs font-mono text-slate-300">
-                        ({stats.globalMax.x.toFixed(2)}, {stats.globalMax.y.toFixed(2)}, {stats.globalMax.z.toFixed(2)})
+                        ({stats.globalMax.x.toFixed(3)}, {stats.globalMax.y.toFixed(3)}, {stats.globalMax.z.toFixed(3)})
                       </span>
                     ) : (
                       <span className="text-xs text-slate-500">—</span>
