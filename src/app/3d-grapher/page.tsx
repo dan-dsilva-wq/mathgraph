@@ -110,6 +110,10 @@ function Graph3DPage() {
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
   const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [highResolution, setHighResolution] = useState(false);
+
+  // Resolution: 60 for normal, 120 for high
+  const resolution = highResolution ? 120 : 60;
 
   // Load recent equations and current expressions from localStorage after mount (avoids hydration mismatch)
   useEffect(() => {
@@ -282,7 +286,6 @@ function Graph3DPage() {
       const eval1 = createEvaluator(expr1);
       const eval2 = createEvaluator(expr2);
 
-      const resolution = 60;
       const [xMin, xMax] = xRange;
       const [yMin, yMax] = yRange;
       const xStep = (xMax - xMin) / resolution;
@@ -307,7 +310,7 @@ function Graph3DPage() {
     } catch {
       return null;
     }
-  }, [xRange, yRange]);
+  }, [xRange, yRange, resolution]);
 
   // Update volume when in volume mode and expressions change
   useEffect(() => {
@@ -825,12 +828,24 @@ function Graph3DPage() {
               xRange={xRange}
               yRange={yRange}
               zRange={autoZRange ? undefined : userZRange}
-              resolution={60}
+              resolution={resolution}
               showSurfaceGrid={showSurfaceGrid}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />
           </div>
+          {/* High resolution toggle button */}
+          <button
+            onClick={() => setHighResolution(!highResolution)}
+            className={`absolute top-6 right-20 p-2 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border ${
+              highResolution
+                ? 'bg-blue-600/80 hover:bg-blue-500 border-blue-500/50'
+                : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700/50'
+            }`}
+            title={highResolution ? 'Switch to normal resolution (60×60)' : 'Switch to high resolution (120×120)'}
+          >
+            <span className="text-xs font-medium">HD</span>
+          </button>
           {/* Fullscreen toggle button */}
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
