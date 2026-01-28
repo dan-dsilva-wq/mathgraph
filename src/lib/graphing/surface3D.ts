@@ -338,63 +338,92 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  // Find global minimum and maximum (only considering points within z clip range)
+  // Find true critical points (where gradient ≈ 0) using numerical differentiation
   const criticalPoints: CriticalPoint[] = [];
 
-  let globalMinPoint: { i: number; j: number; z: number } | null = null;
-  let globalMaxPoint: { i: number; j: number; z: number } | null = null;
+  // Small step for numerical derivatives
+  const h = Math.min(xStep, yStep) * 0.5;
+  const gradientThreshold = 0.1; // Threshold for considering gradient "zero"
 
-  for (let i = 0; i <= resolution; i++) {
-    for (let j = 0; j <= resolution; j++) {
+  for (let i = 1; i < resolution; i++) {
+    for (let j = 1; j < resolution; j++) {
       const z = zValues[i][j];
       if (z === null) continue;
 
-      // Only consider points within the z clip range for critical points
+      // Skip if outside z clip range
       if (zClipRange && (z < zClipRange[0] || z > zClipRange[1])) continue;
 
-      if (globalMinPoint === null || z < globalMinPoint.z) {
-        globalMinPoint = { i, j, z };
+      // Get neighboring z values for numerical derivatives
+      const zLeft = zValues[i - 1][j];
+      const zRight = zValues[i + 1][j];
+      const zDown = zValues[i][j - 1];
+      const zUp = zValues[i][j + 1];
+
+      if (zLeft === null || zRight === null || zDown === null || zUp === null) continue;
+
+      // Numerical partial derivatives (central difference)
+      const dzdx = (zRight - zLeft) / (2 * xStep);
+      const dzdy = (zUp - zDown) / (2 * yStep);
+
+      // Check if gradient is approximately zero
+      const gradientMagnitude = Math.sqrt(dzdx * dzdx + dzdy * dzdy);
+      if (gradientMagnitude > gradientThreshold) continue;
+
+      // Found a critical point - now classify it using second derivative test
+      // Get more neighbors for second derivatives
+      const zLeftLeft = i >= 2 ? zValues[i - 2][j] : null;
+      const zRightRight = i <= resolution - 2 ? zValues[i + 2][j] : null;
+      const zDownDown = j >= 2 ? zValues[i][j - 2] : null;
+      const zUpUp = j <= resolution - 2 ? zValues[i][j + 2] : null;
+      const zLeftDown = zValues[i - 1][j - 1];
+      const zRightUp = zValues[i + 1][j + 1];
+      const zLeftUp = zValues[i - 1][j + 1];
+      const zRightDown = zValues[i + 1][j - 1];
+
+      if (zLeftLeft === null || zRightRight === null || zDownDown === null || zUpUp === null ||
+          zLeftDown === null || zRightUp === null || zLeftUp === null || zRightDown === null) continue;
+
+      // Second partial derivatives
+      const d2zdx2 = (zRight - 2 * z + zLeft) / (xStep * xStep);
+      const d2zdy2 = (zUp - 2 * z + zDown) / (yStep * yStep);
+      const d2zdxdy = (zRightUp - zRightDown - zLeftUp + zLeftDown) / (4 * xStep * yStep);
+
+      // Hessian determinant
+      const hessian = d2zdx2 * d2zdy2 - d2zdxdy * d2zdxdy;
+
+      const x = xMin + i * xStep;
+      const y = yMin + j * yStep;
+      const scaledX = (x - xOffset) * xScale;
+      const scaledY = (y - yOffset) * yScale;
+      const scaledZ = (z - zOffset) * zScale;
+
+      let type: 'minimum' | 'maximum' | 'saddle';
+      if (hessian > 0.01) {
+        // Definite - check if min or max
+        type = d2zdx2 > 0 ? 'minimum' : 'maximum';
+      } else if (hessian < -0.01) {
+        type = 'saddle';
+      } else {
+        // Inconclusive - skip
+        continue;
       }
-      if (globalMaxPoint === null || z > globalMaxPoint.z) {
-        globalMaxPoint = { i, j, z };
-      }
+
+      // Check if we already have a critical point very close to this one
+      const isDuplicate = criticalPoints.some(cp =>
+        Math.abs(cp.x - x) < xStep * 2 && Math.abs(cp.y - y) < yStep * 2
+      );
+      if (isDuplicate) continue;
+
+      criticalPoints.push({
+        x,
+        y,
+        z,
+        scaledX,
+        scaledY,
+        scaledZ,
+        type,
+      });
     }
-  }
-
-  // Add global minimum
-  if (globalMinPoint) {
-    const x = xMin + globalMinPoint.i * xStep;
-    const y = yMin + globalMinPoint.j * yStep;
-    const scaledX = (x - xOffset) * xScale;
-    const scaledY = (y - yOffset) * yScale;
-    const scaledZ = (globalMinPoint.z - zOffset) * zScale;
-    criticalPoints.push({
-      x,
-      y,
-      z: globalMinPoint.z,
-      scaledX,
-      scaledY,
-      scaledZ,
-      type: 'minimum',
-    });
-  }
-
-  // Add global maximum (if different from minimum)
-  if (globalMaxPoint && (!globalMinPoint || globalMaxPoint.z !== globalMinPoint.z)) {
-    const x = xMin + globalMaxPoint.i * xStep;
-    const y = yMin + globalMaxPoint.j * yStep;
-    const scaledX = (x - xOffset) * xScale;
-    const scaledY = (y - yOffset) * yScale;
-    const scaledZ = (globalMaxPoint.z - zOffset) * zScale;
-    criticalPoints.push({
-      x,
-      y,
-      z: globalMaxPoint.z,
-      scaledX,
-      scaledY,
-      scaledZ,
-      type: 'maximum',
-    });
   }
 
   // Calculate surface area by summing triangle areas
