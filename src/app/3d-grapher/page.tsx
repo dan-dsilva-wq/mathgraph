@@ -598,9 +598,9 @@ function Graph3DPage() {
                 )}
               </CollapsibleSection>
 
-              {/* Volume Section */}
+              {/* Volume Between Surfaces Section */}
               <CollapsibleSection
-                title="Volume"
+                title="Volume Between Surfaces"
                 icon={<span className="text-xs">📦</span>}
                 badge={
                   volumeBetweenSurfaces !== null ? (
@@ -613,7 +613,10 @@ function Graph3DPage() {
                 {!volumeMode ? (
                   <button
                     onClick={() => {
-                      if (expressions.length === 1 || (expressions.length > 1 && !expressions[1].trim())) {
+                      // Check if we need to add a second expression
+                      const needsSecondExpr = expressions.length === 1 || (expressions.length > 1 && !expressions[1].trim());
+
+                      if (needsSecondExpr) {
                         const newExpressions = [...expressions];
                         if (newExpressions.length === 1) {
                           newExpressions.push('0');
@@ -621,6 +624,21 @@ function Graph3DPage() {
                           newExpressions[1] = '0';
                         }
                         setExpressions(newExpressions);
+
+                        // Immediately update activeExpressions to include the new '0' expression
+                        // so volume calculates right away without waiting for debounce
+                        const validExprs: { expression: string; originalIndex: number }[] = [];
+                        newExpressions.forEach((expr, index) => {
+                          if (expr.trim()) {
+                            const validation = validateExpression(expr);
+                            if (validation.valid) {
+                              validExprs.push({ expression: expr, originalIndex: index });
+                            }
+                          }
+                        });
+                        if (validExprs.length >= 2) {
+                          setActiveExpressions(validExprs);
+                        }
                       }
                       setVolumeMode(true);
                     }}
