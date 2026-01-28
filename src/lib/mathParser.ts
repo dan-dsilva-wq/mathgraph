@@ -86,19 +86,25 @@ function preprocessExpression(expr: string): string {
   // Convert π symbol to pi for math.js
   result = result.replace(/π/g, 'pi');
 
-  // Handle implicit multiplication for constants e and pi
+  // Handle implicit multiplication for constants e (Euler's number) and pi
   // Use negative lookahead to avoid matching 'e' in 'exp'
-  // e( -> e*( , ex -> e*x, ey -> e*y, e3 -> e*3, 3e -> 3*e
+  //
+  // First handle variable/number followed by e: ye -> y*e, xe -> x*e, 3e -> 3*e
+  // (must come before e followed by variable, so yex -> y*ex -> y*e*x)
+  result = result.replace(/([xy])(e)(?!xp)/gi, '$1*$2');  // ye -> y*e, but not yexp
+  result = result.replace(/(\d)(e)(?!xp)/gi, '$1*$2');     // 3e -> 3*e, but not 3exp
+
+  // Then handle e followed by variable/number/paren: ex -> e*x, e3 -> e*3, e( -> e*(
   result = result.replace(/\be(?!xp)\(/g, 'e*(');
   result = result.replace(/\be(?!xp)([xy])/gi, 'e*$1');
-  result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1'); // e3 -> e*3
-  result = result.replace(/(\d)(e)(?!xp)\b/gi, '$1*$2'); // 3e -> 3*e
+  result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1');
+
+  // Handle pi similarly
+  result = result.replace(/([xy])(pi)\b/gi, '$1*$2');      // xpi -> x*pi
+  result = result.replace(/(\d)(pi)\b/gi, '$1*$2');        // 3pi -> 3*pi
   result = result.replace(/\bpi\(/gi, 'pi*(');
   result = result.replace(/\bpi([xy])/gi, 'pi*$1');
-  result = result.replace(/\bpi(\d)/gi, 'pi*$1'); // pi3 -> pi*3
-  result = result.replace(/(\d)(pi)\b/gi, '$1*$2'); // 3pi -> 3*pi
-  result = result.replace(/([xy])(e)(?!xp)\b/gi, '$1*$2');
-  result = result.replace(/([xy])(pi)\b/gi, '$1*$2');
+  result = result.replace(/\bpi(\d)/gi, 'pi*$1');
 
   return result;
 }
