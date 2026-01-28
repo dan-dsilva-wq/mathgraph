@@ -890,6 +890,7 @@ function Graph3DPage() {
               zRange={autoZRange ? undefined : userZRange}
               resolution={resolution}
               showSurfaceGrid={showSurfaceGrid}
+              showVolumeVisualization={volumeMode}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />
