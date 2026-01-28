@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import RangeControls from '@/components/RangeControls';
 import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives } from '@/lib/mathParser';
@@ -380,15 +379,8 @@ function Graph3DPage() {
     <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
       {/* Compact Header */}
       <header className="flex-shrink-0 bg-slate-900 border-b border-slate-800">
-        <div className="px-4 py-2 flex items-center justify-between">
-          <Link href="/" className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Home
-          </Link>
-          <h1 className="text-lg font-semibold text-white">3D Grapher</h1>
-          <div className="w-16" />
+        <div className="px-4 py-2 flex items-center justify-center">
+          <h1 className="text-lg font-semibold text-white">MathGraph 3D</h1>
         </div>
       </header>
 
