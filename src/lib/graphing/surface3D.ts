@@ -404,14 +404,34 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       } else if (hessian < -0.01) {
         type = 'saddle';
       } else {
-        // Inconclusive - skip
-        continue;
+        // Hessian ≈ 0: could be a function of one variable only
+        // Check if one second derivative is significant while the other is ~0
+        const d2zdx2Significant = Math.abs(d2zdx2) > 0.01;
+        const d2zdy2Significant = Math.abs(d2zdy2) > 0.01;
+
+        if (d2zdx2Significant && !d2zdy2Significant) {
+          // Function primarily depends on x (like sin(x))
+          type = d2zdx2 > 0 ? 'minimum' : 'maximum';
+        } else if (d2zdy2Significant && !d2zdx2Significant) {
+          // Function primarily depends on y (like sin(y))
+          type = d2zdy2 > 0 ? 'minimum' : 'maximum';
+        } else {
+          // Truly inconclusive - skip
+          continue;
+        }
       }
 
       // Check if we already have a critical point very close to this one
-      const isDuplicate = criticalPoints.some(cp =>
-        Math.abs(cp.x - x) < xStep * 2 && Math.abs(cp.y - y) < yStep * 2
-      );
+      // For functions of one variable (ridges/valleys), only check the relevant coordinate
+      const isDuplicate = criticalPoints.some(cp => {
+        if (cp.type !== type) return false;
+        // Check if z values are similar (same ridge/valley)
+        if (Math.abs(cp.z - z) > 0.1) return false;
+        // Check proximity - for ridges, same x means duplicate even if y differs
+        const xClose = Math.abs(cp.x - x) < xStep * 3;
+        const yClose = Math.abs(cp.y - y) < yStep * 3;
+        return xClose || yClose; // Either coordinate being close suggests same feature
+      });
       if (isDuplicate) continue;
 
       criticalPoints.push({
