@@ -78,6 +78,8 @@ const MAX_FUNCTIONS = 6;
 const DEBOUNCE_MS = 300; // Update graph 300ms after typing stops
 const MAX_HISTORY = 10;
 const HISTORY_KEY = 'mathgraph-recent-equations';
+const CURRENT_EXPR_KEY = 'mathgraph-current-expressions';
+const CURRENT_RANGES_KEY = 'mathgraph-current-ranges';
 
 interface HistoryEntry {
   expressions: string[];
@@ -119,16 +121,44 @@ function Graph3DPage() {
   const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // Load recent equations from localStorage after mount (avoids hydration mismatch)
+  // Load recent equations and current expressions from localStorage after mount (avoids hydration mismatch)
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(HISTORY_KEY);
-      if (stored) {
-        setRecentEquations(JSON.parse(stored));
+      const storedHistory = localStorage.getItem(HISTORY_KEY);
+      if (storedHistory) {
+        setRecentEquations(JSON.parse(storedHistory));
+      }
+
+      // Only load saved expressions if there are no URL params
+      if (urlExpressions.length === 0) {
+        const storedExpressions = localStorage.getItem(CURRENT_EXPR_KEY);
+        if (storedExpressions) {
+          const parsed = JSON.parse(storedExpressions) as string[];
+          if (parsed.length > 0) {
+            setExpressions(parsed);
+            // Also update active expressions for valid ones
+            const validExprs = parsed
+              .map((expr, i) => ({ expression: expr, originalIndex: i }))
+              .filter(e => e.expression.trim() && validateExpression(e.expression).valid);
+            if (validExprs.length > 0) {
+              setActiveExpressions(validExprs);
+            }
+          }
+        }
+
+        const storedRanges = localStorage.getItem(CURRENT_RANGES_KEY);
+        if (storedRanges) {
+          const ranges = JSON.parse(storedRanges);
+          if (ranges.xRange) setXRange(ranges.xRange);
+          if (ranges.yRange) setYRange(ranges.yRange);
+          if (ranges.zRange) setUserZRange(ranges.zRange);
+          if (ranges.autoZRange !== undefined) setAutoZRange(ranges.autoZRange);
+        }
       }
     } catch {
       // Ignore localStorage errors
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [showSurfaceGrid, setShowSurfaceGrid] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -181,6 +211,29 @@ function Graph3DPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [expressions, isFullscreen]);
+
+  // Save current expressions to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(CURRENT_EXPR_KEY, JSON.stringify(expressions));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [expressions]);
+
+  // Save current ranges to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(CURRENT_RANGES_KEY, JSON.stringify({
+        xRange,
+        yRange,
+        zRange: userZRange,
+        autoZRange,
+      }));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [xRange, yRange, userZRange, autoZRange]);
 
   // Save to history when expressions change (debounced)
   const saveToHistory = useCallback((exprs: string[]) => {

@@ -341,9 +341,10 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   // Find true critical points (where gradient ≈ 0) using numerical differentiation
   const criticalPoints: CriticalPoint[] = [];
 
-  // Small step for numerical derivatives
-  const h = Math.min(xStep, yStep) * 0.5;
-  const gradientThreshold = 0.1; // Threshold for considering gradient "zero"
+  // Adaptive gradient threshold based on the function's range
+  // For flat functions or functions with small derivatives, we need a tighter threshold
+  const zRange = zMax - zMin;
+  const gradientThreshold = Math.max(0.15, zRange * 0.02); // At least 0.15, or 2% of z range
 
   for (let i = 1; i < resolution; i++) {
     for (let j = 1; j < resolution; j++) {
@@ -370,18 +371,13 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       if (gradientMagnitude > gradientThreshold) continue;
 
       // Found a critical point - now classify it using second derivative test
-      // Get more neighbors for second derivatives
-      const zLeftLeft = i >= 2 ? zValues[i - 2][j] : null;
-      const zRightRight = i <= resolution - 2 ? zValues[i + 2][j] : null;
-      const zDownDown = j >= 2 ? zValues[i][j - 2] : null;
-      const zUpUp = j <= resolution - 2 ? zValues[i][j + 2] : null;
-      const zLeftDown = zValues[i - 1][j - 1];
-      const zRightUp = zValues[i + 1][j + 1];
-      const zLeftUp = zValues[i - 1][j + 1];
-      const zRightDown = zValues[i + 1][j - 1];
+      // Get diagonal neighbors for mixed partial derivative
+      const zLeftDown = i > 0 && j > 0 ? zValues[i - 1][j - 1] : null;
+      const zRightUp = i < resolution && j < resolution ? zValues[i + 1][j + 1] : null;
+      const zLeftUp = i > 0 && j < resolution ? zValues[i - 1][j + 1] : null;
+      const zRightDown = i < resolution && j > 0 ? zValues[i + 1][j - 1] : null;
 
-      if (zLeftLeft === null || zRightRight === null || zDownDown === null || zUpUp === null ||
-          zLeftDown === null || zRightUp === null || zLeftUp === null || zRightDown === null) continue;
+      if (zLeftDown === null || zRightUp === null || zLeftUp === null || zRightDown === null) continue;
 
       // Second partial derivatives
       const d2zdx2 = (zRight - 2 * z + zLeft) / (xStep * xStep);
@@ -397,17 +393,20 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
       const scaledY = (y - yOffset) * yScale;
       const scaledZ = (z - zOffset) * zScale;
 
+      // Threshold for significant second derivatives - adaptive based on z range
+      const d2Threshold = Math.max(0.01, zRange * 0.001);
+
       let type: 'minimum' | 'maximum' | 'saddle';
-      if (hessian > 0.01) {
+      if (hessian > d2Threshold) {
         // Definite - check if min or max
         type = d2zdx2 > 0 ? 'minimum' : 'maximum';
-      } else if (hessian < -0.01) {
+      } else if (hessian < -d2Threshold) {
         type = 'saddle';
       } else {
         // Hessian ≈ 0: could be a function of one variable only
         // Check if one second derivative is significant while the other is ~0
-        const d2zdx2Significant = Math.abs(d2zdx2) > 0.01;
-        const d2zdy2Significant = Math.abs(d2zdy2) > 0.01;
+        const d2zdx2Significant = Math.abs(d2zdx2) > d2Threshold;
+        const d2zdy2Significant = Math.abs(d2zdy2) > d2Threshold;
 
         if (d2zdx2Significant && !d2zdy2Significant) {
           // Function primarily depends on x (like sin(x))
