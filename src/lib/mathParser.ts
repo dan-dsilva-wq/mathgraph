@@ -193,6 +193,59 @@ export function getPartialDerivatives(expr: string): { dzdx: string; dzdy: strin
 }
 
 /**
+ * Create evaluators for partial derivatives (for numerical optimization)
+ * Returns functions that evaluate ∂z/∂x and ∂z/∂y at any point
+ */
+export function createDerivativeEvaluators(expression: string): {
+  dzdx: Evaluator;
+  dzdy: Evaluator;
+  d2zdx2: Evaluator;
+  d2zdy2: Evaluator;
+  d2zdxdy: Evaluator;
+} | null {
+  try {
+    const processed = preprocessExpression(expression.trim());
+    const node = parse(processed);
+    if (Array.isArray(node)) return null;
+
+    // First derivatives
+    const dzdxNode = simplify(derivative(node, 'x'));
+    const dzdyNode = simplify(derivative(node, 'y'));
+
+    // Second derivatives
+    const d2zdx2Node = simplify(derivative(dzdxNode, 'x'));
+    const d2zdy2Node = simplify(derivative(dzdyNode, 'y'));
+    const d2zdxdyNode = simplify(derivative(dzdxNode, 'y'));
+
+    // Create evaluator from a math node
+    const createEvalFromNode = (mathNode: MathNode): Evaluator => {
+      const compiled = compile(mathNode.toString());
+      return (x: number, y: number): number | null => {
+        try {
+          const result = compiled.evaluate({ x, y });
+          if (typeof result === 'number' && isFinite(result)) {
+            return result;
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      };
+    };
+
+    return {
+      dzdx: createEvalFromNode(dzdxNode),
+      dzdy: createEvalFromNode(dzdyNode),
+      d2zdx2: createEvalFromNode(d2zdx2Node),
+      d2zdy2: createEvalFromNode(d2zdy2Node),
+      d2zdxdy: createEvalFromNode(d2zdxdyNode),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if a mathjs node contains the variable y
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

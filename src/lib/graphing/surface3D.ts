@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createEvaluator } from '../mathParser';
+import { createEvaluator, createDerivativeEvaluators } from '../mathParser';
 import { getColorForZWithPalette, getUndefinedColor } from './colors';
 
 interface SurfaceOptions {
@@ -338,109 +338,164 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  // Find true critical points (where gradient ≈ 0) using numerical differentiation
+  // Find exact critical points using symbolic derivatives and Newton-Raphson refinement
   const criticalPoints: CriticalPoint[] = [];
 
-  // Adaptive gradient threshold based on the function's range
-  // For flat functions or functions with small derivatives, we need a tighter threshold
-  const zRange = zMax - zMin;
-  const gradientThreshold = Math.max(0.15, zRange * 0.02); // At least 0.15, or 2% of z range
+  // Get symbolic derivative evaluators for precise critical point finding
+  const derivs = createDerivativeEvaluators(expression);
 
-  for (let i = 1; i < resolution; i++) {
-    for (let j = 1; j < resolution; j++) {
-      const z = zValues[i][j];
+  if (derivs) {
+    const { dzdx, dzdy, d2zdx2, d2zdy2, d2zdxdy } = derivs;
+
+    // Newton-Raphson refinement to find exact critical point from an approximate location
+    const refineCriticalPoint = (x0: number, y0: number): { x: number; y: number } | null => {
+      let x = x0;
+      let y = y0;
+      const maxIterations = 50;
+      const tolerance = 1e-12; // Very high precision
+
+      for (let iter = 0; iter < maxIterations; iter++) {
+        const fx = dzdx(x, y);
+        const fy = dzdy(x, y);
+
+        if (fx === null || fy === null) return null;
+
+        // Check convergence
+        const gradMag = Math.sqrt(fx * fx + fy * fy);
+        if (gradMag < tolerance) {
+          return { x, y };
+        }
+
+        // Get Hessian for Newton step
+        const fxx = d2zdx2(x, y);
+        const fyy = d2zdy2(x, y);
+        const fxy = d2zdxdy(x, y);
+
+        if (fxx === null || fyy === null || fxy === null) return null;
+
+        // Compute Hessian determinant
+        const det = fxx * fyy - fxy * fxy;
+        if (Math.abs(det) < 1e-15) {
+          // Singular Hessian - use gradient descent instead
+          const stepSize = 0.1;
+          x -= stepSize * fx;
+          y -= stepSize * fy;
+        } else {
+          // Newton step: [x, y] -= H^(-1) * grad
+          const dx = (fyy * fx - fxy * fy) / det;
+          const dy = (fxx * fy - fxy * fx) / det;
+          x -= dx;
+          y -= dy;
+        }
+
+        // Keep within bounds
+        if (x < xMin || x > xMax || y < yMin || y > yMax) {
+          return null;
+        }
+      }
+
+      return null; // Didn't converge
+    };
+
+    // Scan grid for approximate critical points, then refine
+    const zRange = zMax - zMin;
+    const gradientThreshold = Math.max(0.3, zRange * 0.05);
+    const foundPoints: { x: number; y: number; type: 'minimum' | 'maximum' | 'saddle' }[] = [];
+
+    for (let i = 1; i < resolution && foundPoints.length < 10; i++) {
+      for (let j = 1; j < resolution && foundPoints.length < 10; j++) {
+        const x = xMin + i * xStep;
+        const y = yMin + j * yStep;
+
+        const fx = dzdx(x, y);
+        const fy = dzdy(x, y);
+
+        if (fx === null || fy === null) continue;
+
+        const gradMag = Math.sqrt(fx * fx + fy * fy);
+        if (gradMag > gradientThreshold) continue;
+
+        // Found approximate critical point - refine it
+        const refined = refineCriticalPoint(x, y);
+        if (!refined) continue;
+
+        // Check if this refined point is a duplicate
+        const isDuplicate = foundPoints.some(p =>
+          Math.abs(p.x - refined.x) < 0.01 && Math.abs(p.y - refined.y) < 0.01
+        );
+        if (isDuplicate) continue;
+
+        // Classify using second derivative test at the refined point
+        const fxx = d2zdx2(refined.x, refined.y);
+        const fyy = d2zdy2(refined.x, refined.y);
+        const fxy = d2zdxdy(refined.x, refined.y);
+
+        if (fxx === null || fyy === null || fxy === null) continue;
+
+        const hessian = fxx * fyy - fxy * fxy;
+        const d2Threshold = 0.001;
+
+        let type: 'minimum' | 'maximum' | 'saddle';
+        if (hessian > d2Threshold) {
+          type = fxx > 0 ? 'minimum' : 'maximum';
+        } else if (hessian < -d2Threshold) {
+          type = 'saddle';
+        } else {
+          // For single-variable functions
+          const fxxSig = Math.abs(fxx) > d2Threshold;
+          const fyySig = Math.abs(fyy) > d2Threshold;
+
+          if (fxxSig && !fyySig) {
+            type = fxx > 0 ? 'minimum' : 'maximum';
+          } else if (fyySig && !fxxSig) {
+            type = fyy > 0 ? 'minimum' : 'maximum';
+          } else {
+            continue;
+          }
+        }
+
+        foundPoints.push({ x: refined.x, y: refined.y, type });
+      }
+    }
+
+    // Convert found points to CriticalPoints with exact z values
+    for (const pt of foundPoints) {
+      if (criticalPoints.length >= 3) break;
+
+      const z = evaluate(pt.x, pt.y);
       if (z === null) continue;
 
       // Skip if outside z clip range
       if (zClipRange && (z < zClipRange[0] || z > zClipRange[1])) continue;
 
-      // Get neighboring z values for numerical derivatives
-      const zLeft = zValues[i - 1][j];
-      const zRight = zValues[i + 1][j];
-      const zDown = zValues[i][j - 1];
-      const zUp = zValues[i][j + 1];
-
-      if (zLeft === null || zRight === null || zDown === null || zUp === null) continue;
-
-      // Numerical partial derivatives (central difference)
-      const dzdx = (zRight - zLeft) / (2 * xStep);
-      const dzdy = (zUp - zDown) / (2 * yStep);
-
-      // Check if gradient is approximately zero
-      const gradientMagnitude = Math.sqrt(dzdx * dzdx + dzdy * dzdy);
-      if (gradientMagnitude > gradientThreshold) continue;
-
-      // Found a critical point - now classify it using second derivative test
-      // Get diagonal neighbors for mixed partial derivative
-      const zLeftDown = i > 0 && j > 0 ? zValues[i - 1][j - 1] : null;
-      const zRightUp = i < resolution && j < resolution ? zValues[i + 1][j + 1] : null;
-      const zLeftUp = i > 0 && j < resolution ? zValues[i - 1][j + 1] : null;
-      const zRightDown = i < resolution && j > 0 ? zValues[i + 1][j - 1] : null;
-
-      if (zLeftDown === null || zRightUp === null || zLeftUp === null || zRightDown === null) continue;
-
-      // Second partial derivatives
-      const d2zdx2 = (zRight - 2 * z + zLeft) / (xStep * xStep);
-      const d2zdy2 = (zUp - 2 * z + zDown) / (yStep * yStep);
-      const d2zdxdy = (zRightUp - zRightDown - zLeftUp + zLeftDown) / (4 * xStep * yStep);
-
-      // Hessian determinant
-      const hessian = d2zdx2 * d2zdy2 - d2zdxdy * d2zdxdy;
-
-      const x = xMin + i * xStep;
-      const y = yMin + j * yStep;
-      const scaledX = (x - xOffset) * xScale;
-      const scaledY = (y - yOffset) * yScale;
+      const scaledX = (pt.x - xOffset) * xScale;
+      const scaledY = (pt.y - yOffset) * yScale;
       const scaledZ = (z - zOffset) * zScale;
 
-      // Threshold for significant second derivatives - adaptive based on z range
-      const d2Threshold = Math.max(0.01, zRange * 0.001);
-
-      let type: 'minimum' | 'maximum' | 'saddle';
-      if (hessian > d2Threshold) {
-        // Definite - check if min or max
-        type = d2zdx2 > 0 ? 'minimum' : 'maximum';
-      } else if (hessian < -d2Threshold) {
-        type = 'saddle';
-      } else {
-        // Hessian ≈ 0: could be a function of one variable only
-        // Check if one second derivative is significant while the other is ~0
-        const d2zdx2Significant = Math.abs(d2zdx2) > d2Threshold;
-        const d2zdy2Significant = Math.abs(d2zdy2) > d2Threshold;
-
-        if (d2zdx2Significant && !d2zdy2Significant) {
-          // Function primarily depends on x (like sin(x))
-          type = d2zdx2 > 0 ? 'minimum' : 'maximum';
-        } else if (d2zdy2Significant && !d2zdx2Significant) {
-          // Function primarily depends on y (like sin(y))
-          type = d2zdy2 > 0 ? 'minimum' : 'maximum';
-        } else {
-          // Truly inconclusive - skip
-          continue;
+      // Round to nice values if very close to common numbers (π, π/2, etc.)
+      const roundToNice = (val: number): number => {
+        const niceValues = [
+          0, Math.PI, -Math.PI, Math.PI / 2, -Math.PI / 2,
+          Math.PI / 3, -Math.PI / 3, Math.PI / 4, -Math.PI / 4,
+          Math.PI / 6, -Math.PI / 6, 2 * Math.PI, -2 * Math.PI,
+          3 * Math.PI / 2, -3 * Math.PI / 2,
+          1, -1, 2, -2, 0.5, -0.5
+        ];
+        for (const nice of niceValues) {
+          if (Math.abs(val - nice) < 1e-10) return nice;
         }
-      }
-
-      // Check if we already have a critical point very close to this one
-      // For functions of one variable (ridges/valleys), only check the relevant coordinate
-      const isDuplicate = criticalPoints.some(cp => {
-        if (cp.type !== type) return false;
-        // Check if z values are similar (same ridge/valley)
-        if (Math.abs(cp.z - z) > 0.1) return false;
-        // Check proximity - for ridges, same x means duplicate even if y differs
-        const xClose = Math.abs(cp.x - x) < xStep * 3;
-        const yClose = Math.abs(cp.y - y) < yStep * 3;
-        return xClose || yClose; // Either coordinate being close suggests same feature
-      });
-      if (isDuplicate) continue;
+        // Round to 10 decimal places to remove floating point noise
+        return Math.round(val * 1e10) / 1e10;
+      };
 
       criticalPoints.push({
-        x,
-        y,
-        z,
+        x: roundToNice(pt.x),
+        y: roundToNice(pt.y),
+        z: roundToNice(z),
         scaledX,
         scaledY,
         scaledZ,
-        type,
+        type: pt.type,
       });
     }
   }
