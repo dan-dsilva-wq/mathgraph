@@ -112,8 +112,8 @@ function Graph3DPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [highResolution, setHighResolution] = useState(false);
 
-  // Resolution: 60 for normal, 200 for high (much smoother but slower)
-  const resolution = highResolution ? 200 : 60;
+  // Resolution: 60 for normal, 300 for high (much smoother but slower)
+  const resolution = highResolution ? 300 : 60;
 
   // Load recent equations and current expressions from localStorage after mount (avoids hydration mismatch)
   useEffect(() => {
@@ -842,7 +842,7 @@ function Graph3DPage() {
                 ? 'bg-blue-600/80 hover:bg-blue-500 border-blue-500/50'
                 : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700/50'
             }`}
-            title={highResolution ? 'Switch to normal resolution (60×60)' : 'Switch to high resolution (200×200)'}
+            title={highResolution ? 'Switch to normal resolution (60×60)' : 'Switch to high resolution (300×300)'}
           >
             <span className="text-xs font-medium">HD</span>
           </button>
