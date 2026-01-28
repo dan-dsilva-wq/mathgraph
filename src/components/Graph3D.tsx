@@ -632,7 +632,7 @@ export default function Graph3D({
 
         // Coordinate label above the sphere
         const label = createCoordLabel(point);
-        const labelScale = maxSpan * 0.12;
+        const labelScale = 1.2; // Fixed scale for consistent label size
         label.scale.set(labelScale, labelScale / 2, 1);
         label.position.set(point.scaledX, point.scaledZ + markerSize * 3, point.scaledY);
         criticalPointsGroup.add(label);

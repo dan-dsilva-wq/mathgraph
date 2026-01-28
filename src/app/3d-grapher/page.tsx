@@ -659,20 +659,6 @@ function Graph3DPage() {
                               swapAxes={intersection.solvedFor === 'x'}
                             />
                           </div>
-                          <Link
-                            href={`/2d-grapher?eq=${encodeURIComponent(
-                              intersection.hasPlusMinus && intersection.rawExpressionNeg
-                                ? intersection.rawExpression + '|' + intersection.rawExpressionNeg
-                                : intersection.rawExpression
-                            )}&xr=${xRange[0]},${xRange[1]}`}
-                            target="_blank"
-                            className="mt-2 flex items-center justify-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                            Open in 2D Grapher
-                          </Link>
                         </div>
                       )}
 

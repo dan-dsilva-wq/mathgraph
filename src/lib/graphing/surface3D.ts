@@ -338,7 +338,7 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  // Find global minimum and maximum
+  // Find global minimum and maximum (only considering points within z clip range)
   const criticalPoints: CriticalPoint[] = [];
 
   let globalMinPoint: { i: number; j: number; z: number } | null = null;
@@ -348,6 +348,9 @@ export function generateSurface(options: SurfaceOptions): SurfaceResult {
     for (let j = 0; j <= resolution; j++) {
       const z = zValues[i][j];
       if (z === null) continue;
+
+      // Only consider points within the z clip range for critical points
+      if (zClipRange && (z < zClipRange[0] || z > zClipRange[1])) continue;
 
       if (globalMinPoint === null || z < globalMinPoint.z) {
         globalMinPoint = { i, j, z };
