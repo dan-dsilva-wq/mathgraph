@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import RangeControls from '@/components/RangeControls';
 import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives } from '@/lib/mathParser';
-import { IntegrationResult, calculateVolumeBetweenAdaptive, integratePolynomialVolumeBetween } from '@/lib/integration';
+import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -110,6 +110,10 @@ function Graph3DPage() {
   const [volumeMode, setVolumeMode] = useState(false);
   const [volumeBetweenSurfaces, setVolumeBetweenSurfaces] = useState<number | null>(null);
   const [volumeBetweenResult, setVolumeBetweenResult] = useState<IntegrationResult | null>(null);
+  // Fill direction for each surface: 'above' or 'below'
+  // 'below' means fill the region below the surface (z < f(x,y))
+  // 'above' means fill the region above the surface (z > f(x,y))
+  const [volumeFillDirections, setVolumeFillDirections] = useState<('above' | 'below')[]>(['below', 'above']);
   const [recentEquations, setRecentEquations] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [highResolution, setHighResolution] = useState(false);
@@ -294,24 +298,32 @@ function Graph3DPage() {
   // Helper to get just the expression strings from activeExpressions
   const activeExpressionStrings = activeExpressions.map(e => e.expression);
 
-  // Calculate volume between two surfaces using adaptive integration
-  const calculateVolumeBetween = useCallback((expr1: string, expr2: string): IntegrationResult | null => {
+  // Calculate volume using fill directions (matches the visualization)
+  const calculateVolume = useCallback((
+    expressions: string[],
+    fillDirections: FillDirection[],
+    zClipRange: [number, number] | null
+  ): IntegrationResult | null => {
     try {
-      // Try symbolic integration for polynomials first (exact result)
-      const symbolicResult = integratePolynomialVolumeBetween(expr1, expr2, xRange, yRange);
-      if (symbolicResult !== null) {
-        return symbolicResult;
+      // Build array of surface constraints
+      const surfaces: SurfaceConstraint[] = expressions.map((expr, i) => ({
+        evaluate: createEvaluator(expr),
+        fillDirection: fillDirections[i] || (i === 0 ? 'below' : 'above'),
+      }));
+
+      // If only one surface, add z=0 as second surface
+      if (surfaces.length === 1) {
+        surfaces.push({
+          evaluate: () => 0,
+          fillDirection: fillDirections[1] || 'above',
+        });
       }
 
-      // Fall back to adaptive numerical integration
-      const eval1 = createEvaluator(expr1);
-      const eval2 = createEvaluator(expr2);
-
-      return calculateVolumeBetweenAdaptive(
-        eval1,
-        eval2,
+      return calculateVolumeWithFillDirections(
+        surfaces,
         xRange,
         yRange,
+        zClipRange,
         1e-3,  // tolerance (relaxed for UI responsiveness)
         4      // maxDepth (reduced for speed)
       );
@@ -320,22 +332,28 @@ function Graph3DPage() {
     }
   }, [xRange, yRange]);
 
-  // Update volume when in volume mode and expressions change
+  // Update volume when in volume mode and expressions/fill directions change
+  // Uses the same fill direction logic as the visualization
   useEffect(() => {
-    if (volumeMode && activeExpressionStrings.length >= 2) {
-      const result = calculateVolumeBetween(activeExpressionStrings[0], activeExpressionStrings[1]);
+    if (volumeMode && activeExpressionStrings.length >= 1) {
+      const zClipRange = autoZRange ? null : userZRange;
+      const result = calculateVolume(
+        activeExpressionStrings,
+        volumeFillDirections,
+        zClipRange
+      );
       setVolumeBetweenResult(result);
       setVolumeBetweenSurfaces(result?.value ?? null);
     } else {
       setVolumeBetweenSurfaces(null);
       setVolumeBetweenResult(null);
-      // Reset volume mode if we don't have 2 expressions anymore
-      if (volumeMode && activeExpressionStrings.length < 2) {
+      // Reset volume mode if we don't have any expressions
+      if (volumeMode && activeExpressionStrings.length < 1) {
         setVolumeMode(false);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [volumeMode, activeExpressionStrings.join('|'), xRange[0], xRange[1], yRange[0], yRange[1]]);
+  }, [volumeMode, activeExpressionStrings.join('|'), xRange[0], xRange[1], yRange[0], yRange[1], volumeFillDirections, userZRange, autoZRange]);
 
   // Auto-update graph when expressions change (debounced)
   useEffect(() => {
@@ -631,7 +649,7 @@ function Graph3DPage() {
 
               {/* Volume Between Surfaces Section */}
               <CollapsibleSection
-                title="Volume Between Surfaces"
+                title="Enclosed Volume"
                 icon={<span className="text-xs">📦</span>}
                 badge={
                   volumeBetweenSurfaces !== null ? (
@@ -643,52 +661,110 @@ function Graph3DPage() {
               >
                 {!volumeMode ? (
                   <button
-                    onClick={() => {
-                      // Check if we need to add a second expression
-                      const needsSecondExpr = expressions.length === 1 || (expressions.length > 1 && !expressions[1].trim());
-
-                      if (needsSecondExpr) {
-                        const newExpressions = [...expressions];
-                        if (newExpressions.length === 1) {
-                          newExpressions.push('0');
-                        } else {
-                          newExpressions[1] = '0';
-                        }
-                        setExpressions(newExpressions);
-
-                        // Immediately update activeExpressions to include the new '0' expression
-                        // so volume calculates right away without waiting for debounce
-                        const validExprs: { expression: string; originalIndex: number }[] = [];
-                        newExpressions.forEach((expr, index) => {
-                          if (expr.trim()) {
-                            const validation = validateExpression(expr);
-                            if (validation.valid) {
-                              validExprs.push({ expression: expr, originalIndex: index });
-                            }
-                          }
-                        });
-                        if (validExprs.length >= 2) {
-                          setActiveExpressions(validExprs);
-                        }
-                      }
-                      setVolumeMode(true);
-                    }}
+                    onClick={() => setVolumeMode(true)}
                     className="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
+                    disabled={activeExpressions.length < 1}
                   >
-                    Calculate Volume Between Surfaces
+                    Calculate Enclosed Volume
                   </button>
                 ) : (
                   <div className="space-y-2">
-                    {activeExpressions.length >= 2 ? (
+                    {activeExpressions.length >= 1 ? (
                       <>
-                        <div className="space-y-1">
-                          {activeExpressions.slice(0, 2).map((expr, i) => (
+                        <div className="space-y-2">
+                          <div className="text-[10px] text-slate-500 mb-1">
+                            Select which side of each surface to fill:
+                          </div>
+                          {activeExpressions.map((expr, i) => (
                             <div key={i} className="flex items-center gap-2 text-xs">
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getFunctionColor(expr.originalIndex) }} />
-                              <span className="text-slate-400">z{i+1} =</span>
-                              <span className="text-slate-300 font-mono truncate">{expr.expression}</span>
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getFunctionColor(expr.originalIndex) }} />
+                              <span className="text-slate-400 flex-shrink-0">z{i+1} =</span>
+                              <span className="text-slate-300 font-mono truncate flex-1">{expr.expression}</span>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    const newDirs = [...volumeFillDirections];
+                                    newDirs[i] = 'above';
+                                    setVolumeFillDirections(newDirs);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                                    volumeFillDirections[i] === 'above'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                                  }`}
+                                  title="Fill region above this surface"
+                                >
+                                  ▲ above
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const newDirs = [...volumeFillDirections];
+                                    newDirs[i] = 'below';
+                                    setVolumeFillDirections(newDirs);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                                    volumeFillDirections[i] === 'below'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                                  }`}
+                                  title="Fill region below this surface"
+                                >
+                                  ▼ below
+                                </button>
+                              </div>
                             </div>
                           ))}
+                          {activeExpressions.length === 1 && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <div className="w-2 h-2 rounded-full bg-slate-500 flex-shrink-0" />
+                              <span className="text-slate-400 flex-shrink-0">z₂ =</span>
+                              <span className="text-slate-300 font-mono flex-1">0</span>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    const newDirs = [...volumeFillDirections];
+                                    newDirs[1] = 'above';
+                                    setVolumeFillDirections(newDirs);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                                    volumeFillDirections[1] === 'above'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                                  }`}
+                                  title="Fill region above z=0"
+                                >
+                                  ▲ above
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const newDirs = [...volumeFillDirections];
+                                    newDirs[1] = 'below';
+                                    setVolumeFillDirections(newDirs);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                                    volumeFillDirections[1] === 'below'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                                  }`}
+                                  title="Fill region below z=0"
+                                >
+                                  ▼ below
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500 bg-slate-800/50 rounded p-2">
+                          Volume = intersection of {
+                            [...Array(Math.max(activeExpressions.length, 1) + (activeExpressions.length === 1 ? 1 : 0))].map((_, i) => {
+                              const dir = volumeFillDirections[i] || (i === 0 ? 'below' : 'above');
+                              const label = i < activeExpressions.length ? `z${i + 1}` : 'z=0';
+                              return `${dir === 'below' ? 'below' : 'above'} ${label}`;
+                            }).join(' ∩ ')
+                          }
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Domain: x ∈ [{xRange[0]}, {xRange[1]}], y ∈ [{yRange[0]}, {yRange[1]}]
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-lg font-mono text-white">
@@ -717,25 +793,43 @@ function Graph3DPage() {
                         </button>
                         {showVolumeWorking && (
                           <div className="text-[10px] text-slate-500 space-y-1 overflow-x-auto custom-scrollbar">
-                            <InlineMath math="V = \iint_D |z_1 - z_2| \, dA" />
+                            <InlineMath math="V = \iint_D \max(0, z_{top} - z_{bot}) \, dA" />
+                            <div className="text-slate-600 mt-1">
+                              where z<sub>top</sub> = min of upper bounds, z<sub>bot</sub> = max of lower bounds
+                            </div>
+                            {[...Array(Math.max(activeExpressions.length, 1) + (activeExpressions.length === 1 ? 1 : 0))].map((_, i) => {
+                              const dir = volumeFillDirections[i] || (i === 0 ? 'below' : 'above');
+                              const label = i < activeExpressions.length ? `z${i + 1}` : 'z=0';
+                              const subscript = i < activeExpressions.length ? String(i + 1) : '₀';
+                              return (
+                                <div key={i} className="text-slate-600">
+                                  • {dir === 'below' ? `z < ${label} (upper bound)` : `z > ${label} (lower bound)`}
+                                </div>
+                              );
+                            })}
+                            <div className="text-slate-600 mt-1">
+                              {volumeBetweenResult?.method === 'adaptive'
+                                ? '(adaptive Gaussian quadrature)'
+                                : '(Gaussian quadrature)'}
+                            </div>
                             <div className="text-slate-600">
-                              {volumeBetweenResult?.method === 'symbolic'
-                                ? '(symbolic polynomial integration)'
-                                : volumeBetweenResult?.method === 'adaptive'
-                                  ? '(adaptive Gaussian quadrature)'
-                                  : '(Gaussian quadrature)'}
+                              Domain: x ∈ [{xRange[0]}, {xRange[1]}], y ∈ [{yRange[0]}, {yRange[1]}]
+                              {!autoZRange && `, z ∈ [${userZRange[0]}, ${userZRange[1]}]`}
                             </div>
                           </div>
                         )}
                       </>
                     ) : (
-                      <div className="text-xs text-slate-500">Need 2 surfaces</div>
+                      <div className="text-xs text-slate-500">Need at least 1 surface</div>
                     )}
                     <button
                       onClick={() => setVolumeMode(false)}
-                      className="text-[10px] text-slate-500 hover:text-slate-400"
+                      className="w-full mt-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded transition-colors flex items-center justify-center gap-1"
                     >
-                      Close
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Stop Measuring Volume
                     </button>
                   </div>
                 )}
@@ -891,6 +985,7 @@ function Graph3DPage() {
               resolution={resolution}
               showSurfaceGrid={showSurfaceGrid}
               showVolumeVisualization={volumeMode}
+              volumeFillDirections={volumeFillDirections}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />

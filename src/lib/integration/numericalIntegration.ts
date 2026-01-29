@@ -340,3 +340,63 @@ export function calculateVolumeBetweenAdaptive(
 
   return adaptiveIntegrate2D(integrand, xRange, yRange, tolerance, maxDepth);
 }
+
+export type FillDirection = 'above' | 'below';
+
+export interface SurfaceConstraint {
+  evaluate: Evaluator2D;
+  fillDirection: FillDirection;
+}
+
+/**
+ * Calculate volume of the region defined by fill direction constraints.
+ * Supports any number of surfaces - the volume is the intersection of all constraints.
+ *
+ * For each surface, fillDir specifies which side to fill:
+ * - 'below' means z < f(x,y) -> contributes an upper bound
+ * - 'above' means z > f(x,y) -> contributes a lower bound
+ *
+ * The volume is the intersection of these regions, clamped to zRange.
+ *
+ * Volume = integral of max(0, top - bottom) dA where top/bottom are the bounds
+ * of the intersection region at each (x, y).
+ */
+export function calculateVolumeWithFillDirections(
+  surfaces: SurfaceConstraint[],
+  xRange: [number, number],
+  yRange: [number, number],
+  zRange: [number, number] | null,
+  tolerance: number = 1e-6,
+  maxDepth: number = 8
+): IntegrationResult {
+  const [zClipMin, zClipMax] = zRange || [-1e10, 1e10];
+
+  const integrand: Evaluator2D = (x, y) => {
+    let top = Infinity;
+    let bottom = -Infinity;
+
+    // Apply constraints from each surface
+    for (const surface of surfaces) {
+      const z = surface.evaluate(x, y);
+      if (z === null || !isFinite(z)) return null;
+
+      if (surface.fillDirection === 'below') {
+        // z < f -> upper bound
+        top = Math.min(top, z);
+      } else {
+        // z > f -> lower bound
+        bottom = Math.max(bottom, z);
+      }
+    }
+
+    // Apply z clipping
+    top = Math.min(top, zClipMax);
+    bottom = Math.max(bottom, zClipMin);
+
+    // Height of the region at this point
+    const height = top - bottom;
+    return height > 0 ? height : 0;
+  };
+
+  return adaptiveIntegrate2D(integrand, xRange, yRange, tolerance, maxDepth);
+}

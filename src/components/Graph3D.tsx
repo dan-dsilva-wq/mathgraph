@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateSurface, calculateZRange, CriticalPoint } from '@/lib/graphing/surface3D';
 import { createEvaluator } from '@/lib/mathParser';
+import { generateClosedVolumeGeometry, SurfaceConstraint } from '@/lib/graphing/volumeGeometry';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -28,6 +29,7 @@ interface Graph3DProps {
   resolution?: number;
   showSurfaceGrid?: boolean;
   showVolumeVisualization?: boolean; // Show semi-transparent volume between first two surfaces
+  volumeFillDirections?: ('above' | 'below')[]; // Fill direction for each surface
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
     surfaceAreas: SurfaceStats[];
@@ -45,6 +47,7 @@ export default function Graph3D({
   resolution = 60,
   showSurfaceGrid = false,
   showVolumeVisualization = false,
+  volumeFillDirections = ['below', 'above'],
   onZRangeChange,
   onStatsChange,
 }: Graph3DProps) {
@@ -713,125 +716,56 @@ export default function Graph3D({
       sceneRef.current.add(criticalPointsGroup);
       criticalPointsGroupRef.current = criticalPointsGroup;
 
-      // Generate volume visualization between first two surfaces if enabled
-      if (showVolumeVisualization && validExpressions.length >= 2) {
+      // Generate volume visualization - shows enclosed region defined by fill directions
+      // Creates a closed mesh with top surface, bottom surface, and 4 boundary walls
+      if (showVolumeVisualization && validExpressions.length >= 1) {
         const volumeGroup = new THREE.Group();
 
         try {
-          const eval1 = createEvaluator(validExpressions[0].expression);
-          const eval2 = createEvaluator(validExpressions[1].expression);
+          // Build array of surface constraints for all expressions
+          const surfaces: SurfaceConstraint[] = validExpressions.map((expr, i) => ({
+            evaluate: createEvaluator(expr.expression),
+            fillDirection: volumeFillDirections[i] || (i === 0 ? 'below' : 'above'),
+          }));
 
-          const [xMin, xMax] = xRange;
-          const [yMin, yMax] = yRange;
-          const volResolution = Math.min(resolution, 40); // Lower resolution for performance
-          const xStep = (xMax - xMin) / volResolution;
-          const yStep = (yMax - yMin) / volResolution;
+          // If only one surface, add z=0 as second surface
+          if (surfaces.length === 1) {
+            surfaces.push({
+              evaluate: () => 0,
+              fillDirection: volumeFillDirections[1] || 'above',
+            });
+          }
 
-          // Get transform from first surface for coordinate conversion
           const t = transformRef.current;
           if (t) {
-            const vertices: number[] = [];
-            const indices: number[] = [];
+            const volumeGeometry = generateClosedVolumeGeometry(
+              surfaces,
+              xRange,
+              yRange,
+              zRange || null,
+              Math.min(resolution, 60),
+              t
+            );
 
-            // Generate vertices for volume mesh (both top and bottom at each grid point)
-            for (let i = 0; i <= volResolution; i++) {
-              for (let j = 0; j <= volResolution; j++) {
-                const x = xMin + i * xStep;
-                const y = yMin + j * yStep;
-                const z1 = eval1(x, y);
-                const z2 = eval2(x, y);
+            if (volumeGeometry) {
+              const bufferGeometry = new THREE.BufferGeometry();
+              bufferGeometry.setAttribute('position', new THREE.BufferAttribute(volumeGeometry.positions, 3));
+              bufferGeometry.setAttribute('normal', new THREE.BufferAttribute(volumeGeometry.normals, 3));
+              bufferGeometry.setIndex(new THREE.BufferAttribute(volumeGeometry.indices, 1));
 
-                if (z1 !== null && z2 !== null) {
-                  // Convert to visual coordinates
-                  const scaledX = (x - t.xOffset) * t.xScale;
-                  const scaledY = (y - t.yOffset) * t.yScale;
-                  const scaledZ1 = (z1 - t.zOffset) * t.zScale;
-                  const scaledZ2 = (z2 - t.zOffset) * t.zScale;
+              const material = new THREE.MeshPhongMaterial({
+                color: 0x4488ff,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                shininess: 30,
+              });
 
-                  // Add top vertex (surface 1)
-                  vertices.push(scaledX, scaledZ1, scaledY);
-                  // Add bottom vertex (surface 2)
-                  vertices.push(scaledX, scaledZ2, scaledY);
-                }
-              }
+              const volumeMesh = new THREE.Mesh(bufferGeometry, material);
+              volumeMesh.renderOrder = 10; // Render after other objects for proper transparency
+              volumeGroup.add(volumeMesh);
             }
-
-            // Generate triangles connecting the two surfaces
-            const getVertexIndex = (i: number, j: number, isTop: boolean): number => {
-              return (i * (volResolution + 1) + j) * 2 + (isTop ? 0 : 1);
-            };
-
-            for (let i = 0; i < volResolution; i++) {
-              for (let j = 0; j < volResolution; j++) {
-                // Each cell has 4 corners, each with top and bottom vertices
-                // Create triangles for the "walls" between surfaces
-
-                // Side walls (connect top to bottom)
-                const t00 = getVertexIndex(i, j, true);
-                const b00 = getVertexIndex(i, j, false);
-                const t10 = getVertexIndex(i + 1, j, true);
-                const b10 = getVertexIndex(i + 1, j, false);
-                const t01 = getVertexIndex(i, j + 1, true);
-                const b01 = getVertexIndex(i, j + 1, false);
-                const t11 = getVertexIndex(i + 1, j + 1, true);
-                const b11 = getVertexIndex(i + 1, j + 1, false);
-
-                // Top surface triangles (surface 1)
-                indices.push(t00, t10, t01);
-                indices.push(t01, t10, t11);
-
-                // Bottom surface triangles (surface 2) - reversed winding
-                indices.push(b00, b01, b10);
-                indices.push(b01, b11, b10);
-
-                // Side walls along X direction
-                if (i === 0) {
-                  indices.push(t00, b00, t01);
-                  indices.push(t01, b00, b01);
-                }
-                if (i === volResolution - 1) {
-                  indices.push(t10, t11, b10);
-                  indices.push(t11, b11, b10);
-                }
-
-                // Side walls along Y direction
-                if (j === 0) {
-                  indices.push(t00, t10, b00);
-                  indices.push(t10, b10, b00);
-                }
-                if (j === volResolution - 1) {
-                  indices.push(t01, b01, t11);
-                  indices.push(t11, b01, b11);
-                }
-              }
-            }
-
-            const volumeGeometry = new THREE.BufferGeometry();
-            volumeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            volumeGeometry.setIndex(indices);
-            volumeGeometry.computeVertexNormals();
-
-            const volumeMaterial = new THREE.MeshStandardMaterial({
-              color: 0x4488ff,
-              transparent: true,
-              opacity: 0.3,
-              side: THREE.DoubleSide,
-              depthWrite: false,
-            });
-
-            const volumeMesh = new THREE.Mesh(volumeGeometry, volumeMaterial);
-            volumeMesh.renderOrder = 1; // Render after surfaces
-            volumeGroup.add(volumeMesh);
-
-            // Add wireframe outline for better visibility
-            const wireframeGeometry = new THREE.WireframeGeometry(volumeGeometry);
-            const wireframeMaterial = new THREE.LineBasicMaterial({
-              color: 0x2266cc,
-              opacity: 0.5,
-              transparent: true,
-            });
-            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
-            volumeGroup.add(wireframe);
           }
         } catch (err) {
           console.warn('Failed to generate volume visualization:', err);
@@ -859,7 +793,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">
