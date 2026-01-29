@@ -273,6 +273,64 @@ export function generateClosedVolumeGeometry(
     }
   }
 
+  // 8. Create interior walls where valid cells border invalid cells
+  // This closes off the volume where the region ends inside the domain
+  for (let i = 0; i < resolution; i++) {
+    for (let j = 0; j < resolution; j++) {
+      const data = gridData[i][j];
+      if (data === null) continue;
+
+      const x0 = xMin + i * xStep;
+      const x1 = xMin + (i + 1) * xStep;
+      const y0 = yMin + j * yStep;
+      const y1 = yMin + (j + 1) * yStep;
+
+      // Check neighbor in +x direction
+      if (i + 1 <= resolution && gridData[i + 1][j] === null) {
+        // Create wall facing +x at x1
+        const wt0 = addVertex(x1, y0, data.top);
+        const wt1 = addVertex(x1, y1, data.top);
+        const wb0 = addVertex(x1, y0, data.bottom);
+        const wb1 = addVertex(x1, y1, data.bottom);
+        indices.push(wt0, wt1, wb0);
+        indices.push(wt1, wb1, wb0);
+      }
+
+      // Check neighbor in -x direction
+      if (i > 0 && gridData[i - 1][j] === null) {
+        // Create wall facing -x at x0
+        const wt0 = addVertex(x0, y0, data.top);
+        const wt1 = addVertex(x0, y1, data.top);
+        const wb0 = addVertex(x0, y0, data.bottom);
+        const wb1 = addVertex(x0, y1, data.bottom);
+        indices.push(wt0, wb0, wt1);
+        indices.push(wt1, wb0, wb1);
+      }
+
+      // Check neighbor in +y direction
+      if (j + 1 <= resolution && gridData[i][j + 1] === null) {
+        // Create wall facing +y at y1
+        const wt0 = addVertex(x0, y1, data.top);
+        const wt1 = addVertex(x1, y1, data.top);
+        const wb0 = addVertex(x0, y1, data.bottom);
+        const wb1 = addVertex(x1, y1, data.bottom);
+        indices.push(wt0, wb0, wt1);
+        indices.push(wt1, wb0, wb1);
+      }
+
+      // Check neighbor in -y direction
+      if (j > 0 && gridData[i][j - 1] === null) {
+        // Create wall facing -y at y0
+        const wt0 = addVertex(x0, y0, data.top);
+        const wt1 = addVertex(x1, y0, data.top);
+        const wb0 = addVertex(x0, y0, data.bottom);
+        const wb1 = addVertex(x1, y0, data.bottom);
+        indices.push(wt0, wt1, wb0);
+        indices.push(wt1, wb1, wb0);
+      }
+    }
+  }
+
   // Return null if no geometry was created
   if (positions.length === 0 || indices.length === 0) {
     return null;
