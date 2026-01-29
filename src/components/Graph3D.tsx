@@ -834,26 +834,28 @@ export default function Graph3D({
           <div><span className="text-green-400">z:</span> {hoverPoint.z.toFixed(3)}</div>
         </div>
       )}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2">
+      <div className="absolute bottom-2 md:bottom-4 left-2 md:left-4 flex items-center gap-1 md:gap-2">
         <button
           onClick={resetView}
-          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 p-2 md:px-3 md:py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          title="Reset View"
         >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 md:w-3 md:h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          Reset View
+          <span className="hidden md:inline">Reset View</span>
         </button>
         <button
           onClick={downloadPNG}
-          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 px-3 py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          className="text-xs text-gray-300 bg-black/50 hover:bg-black/70 p-2 md:px-3 md:py-1.5 rounded backdrop-blur-sm transition-colors flex items-center gap-1"
+          title="Download PNG"
         >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 md:w-3 md:h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
-          Download PNG
+          <span className="hidden md:inline">Download PNG</span>
         </button>
-        <span className="text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+        <span className="hidden md:inline text-xs text-gray-400 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
           Drag to rotate &bull; Scroll to zoom
         </span>
       </div>

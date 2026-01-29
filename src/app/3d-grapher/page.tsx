@@ -174,6 +174,7 @@ function Graph3DPage() {
   }, []);
   const [showSurfaceGrid, setShowSurfaceGrid] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showMobilePanel, setShowMobilePanel] = useState(false);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -454,15 +455,57 @@ function Graph3DPage() {
     <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
       {/* Compact Header */}
       <header className="flex-shrink-0 bg-slate-900 border-b border-slate-800">
-        <div className="px-4 py-2 flex items-center justify-center">
+        <div className="px-4 py-2 flex items-center justify-between">
+          {/* Mobile menu button */}
+          <button
+            onClick={() => setShowMobilePanel(!showMobilePanel)}
+            className="md:hidden p-1 text-slate-400 hover:text-white"
+            aria-label="Toggle controls"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
           <h1 className="text-lg font-semibold text-white">MathGraph 3D</h1>
+          {/* Spacer for centering on mobile */}
+          <div className="w-6 md:hidden" />
         </div>
       </header>
 
       {/* Main content - fixed height, no scroll */}
-      <div className="flex-1 flex min-h-0">
-        {/* Left Panel - Controls */}
-        <div className={`${isFullscreen ? 'hidden' : 'w-80'} flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto transition-all`}>
+      <div className="flex-1 flex min-h-0 relative">
+        {/* Mobile overlay backdrop */}
+        {showMobilePanel && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/50 z-20"
+            onClick={() => setShowMobilePanel(false)}
+          />
+        )}
+
+        {/* Left Panel - Controls (slide-over on mobile) */}
+        <div className={`
+          ${isFullscreen ? 'hidden' : ''}
+          ${showMobilePanel ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          fixed md:relative z-30 md:z-auto
+          w-80 max-w-[85vw] md:max-w-none
+          h-[calc(100vh-49px)] md:h-auto
+          flex-shrink-0 bg-slate-900 border-r border-slate-800
+          flex flex-col overflow-y-auto
+          transition-transform duration-300 ease-in-out
+        `}>
+          {/* Mobile close button */}
+          <div className="md:hidden flex items-center justify-between p-3 border-b border-slate-800">
+            <span className="text-sm font-medium text-slate-300">Controls</span>
+            <button
+              onClick={() => setShowMobilePanel(false)}
+              className="p-1 text-slate-400 hover:text-white"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
           {/* Multi-Equation Input */}
           <div className="p-4 border-b border-slate-800">
             <div className="flex items-center justify-between mb-3">
@@ -975,7 +1018,7 @@ function Graph3DPage() {
         </div>
 
         {/* Right Panel - Graph */}
-        <div className="flex-1 p-4 min-w-0 relative">
+        <div className="flex-1 p-2 md:p-4 min-w-0 relative">
           <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl">
             <Graph3D
               expressions={activeExpressions}
@@ -990,11 +1033,23 @@ function Graph3DPage() {
               onStatsChange={handleStatsChange}
             />
           </div>
+
+          {/* Mobile floating controls button */}
+          <button
+            onClick={() => setShowMobilePanel(true)}
+            className="md:hidden absolute top-4 left-4 p-3 bg-blue-600/90 hover:bg-blue-500 rounded-full text-white shadow-lg transition-colors"
+            aria-label="Open controls"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+          </button>
+
           {/* High resolution toggle button */}
           <button
             onClick={toggleHighResolution}
             disabled={isLoadingHD}
-            className={`absolute top-6 right-20 p-2 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border ${
+            className={`absolute top-4 md:top-6 right-16 md:right-20 p-2 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border ${
               isLoadingHD
                 ? 'bg-amber-600/80 border-amber-500/50 cursor-wait'
                 : highResolution
@@ -1012,10 +1067,11 @@ function Graph3DPage() {
               <span className="text-xs font-medium">HD</span>
             )}
           </button>
+
           {/* Fullscreen toggle button */}
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="absolute top-6 right-6 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border border-slate-700/50"
+            className="absolute top-4 md:top-6 right-4 md:right-6 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors backdrop-blur-sm border border-slate-700/50"
             title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
           >
             {isFullscreen ? (
