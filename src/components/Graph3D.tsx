@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateSurface, calculateZRange, CriticalPoint } from '@/lib/graphing/surface3D';
 import { createEvaluator } from '@/lib/mathParser';
 import { generateClosedVolumeGeometry, SurfaceConstraint } from '@/lib/graphing/volumeGeometry';
+import { generateParametricSurface, ParametricSurfaceOptions } from '@/lib/graphing/parametricSurface';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -21,6 +22,14 @@ interface SurfaceStats {
   volumeResult: IntegrationResult;
 }
 
+export interface ParametricInput {
+  xExpr: string;
+  yExpr: string;
+  zExpr: string;
+  uRange: [number, number];
+  vRange: [number, number];
+}
+
 interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
@@ -30,6 +39,7 @@ interface Graph3DProps {
   showSurfaceGrid?: boolean;
   showVolumeVisualization?: boolean; // Show semi-transparent volume between first two surfaces
   volumeFillDirections?: ('above' | 'below')[]; // Fill direction for each surface
+  parametricSurfaces?: ParametricInput[]; // Parametric surfaces to render
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
     surfaceAreas: SurfaceStats[];
@@ -48,6 +58,7 @@ export default function Graph3D({
   showSurfaceGrid = false,
   showVolumeVisualization = false,
   volumeFillDirections = ['below', 'above'],
+  parametricSurfaces = [],
   onZRangeChange,
   onStatsChange,
 }: Graph3DProps) {
@@ -512,7 +523,7 @@ export default function Graph3D({
 
     // Filter valid expressions (they should already be filtered, but double-check)
     const validExpressions = expressions.filter(e => e.expression.trim());
-    if (validExpressions.length === 0) return;
+    if (validExpressions.length === 0 && parametricSurfaces.length === 0) return;
 
     try {
       setError(null);
@@ -658,6 +669,63 @@ export default function Graph3D({
         }
       });
 
+      // Render parametric surfaces
+      parametricSurfaces.forEach((param, index) => {
+        try {
+          const { geometry, transform } = generateParametricSurface({
+            xExpr: param.xExpr,
+            yExpr: param.yExpr,
+            zExpr: param.zExpr,
+            uRange: param.uRange,
+            vRange: param.vRange,
+            resolution: Math.min(resolution, 100),
+            functionIndex: validExpressions.length + index,
+          });
+
+          // Store transform for hover coordinate conversion
+          if (validExpressions.length === 0 && index === 0) {
+            transformRef.current = transform;
+          }
+
+          const surfaceMaterial = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            roughness: 0.4,
+            metalness: 0.1,
+            transparent: false,
+            depthWrite: true,
+          });
+
+          const surfaceMesh = new THREE.Mesh(geometry, surfaceMaterial);
+          surfaceMesh.castShadow = true;
+          surfaceMesh.receiveShadow = true;
+          surfaceMesh.frustumCulled = false;
+          surfaceGroup.add(surfaceMesh);
+
+          if (showSurfaceGrid) {
+            const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+            const wireframeMaterial = new THREE.LineBasicMaterial({
+              color: 0x000000,
+              opacity: 0.25,
+              transparent: true,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            surfaceGroup.add(wireframe);
+          } else {
+            const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+            const wireframeMaterial = new THREE.LineBasicMaterial({
+              color: 0x000000,
+              opacity: 0.06,
+              transparent: true,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            surfaceGroup.add(wireframe);
+          }
+        } catch (err) {
+          console.warn(`Failed to render parametric surface:`, err);
+        }
+      });
+
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
@@ -793,7 +861,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">

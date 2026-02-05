@@ -1,6 +1,7 @@
 import { compile, simplify, parse, derivative, rationalize, MathNode } from 'mathjs';
 
 export type Evaluator = (x: number, y: number) => number | null;
+export type ParametricEvaluator = (u: number, v: number) => number | null;
 
 // List of known function names to avoid breaking
 const FUNCTIONS = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
@@ -126,6 +127,113 @@ export function createEvaluator(expression: string): Evaluator {
     };
   } catch (error) {
     throw new Error(`Invalid expression: ${expression}`);
+  }
+}
+
+/**
+ * Preprocess expression for parametric mode (u,v variables instead of x,y)
+ */
+function preprocessParametricExpression(expr: string): string {
+  let result = expr;
+
+  // Auto-add brackets for trig functions without them: sinu -> sin(u), cosv -> cos(v)
+  FUNCTIONS.forEach(fn => {
+    result = result.replace(new RegExp(`(${fn})([uv])(?![a-z0-9(])`, 'gi'), '$1($2)');
+    result = result.replace(new RegExp(`(${fn})([uv])([+\\-*/^])`, 'gi'), '$1($2)$3');
+    result = result.replace(new RegExp(`(${fn})([uv])$`, 'gi'), '$1($2)');
+  });
+
+  // Number followed by variable: 2u -> 2*u
+  result = result.replace(/(\d)([uv])/gi, '$1*$2');
+  // Variable followed by number: u2 -> u*2
+  result = result.replace(/([uv])(\d)/gi, '$1*$2');
+  // Variable followed by variable: uv -> u*v
+  result = result.replace(/([uv])([uv])/gi, '$1*$2');
+  // Number followed by opening paren: 2( -> 2*(
+  result = result.replace(/(\d)\(/g, '$1*(');
+  // Closing paren followed by opening paren: )( -> )*(
+  result = result.replace(/\)\(/g, ')*(');
+  // Closing paren followed by number: )2 -> )*2
+  result = result.replace(/\)(\d)/g, ')*$1');
+  // Closing paren followed by variable: )u -> )*u
+  result = result.replace(/\)([uv])/gi, ')*$1');
+
+  // Variable followed by opening paren (but not a function): u( -> u*(
+  let temp = result;
+  FUNCTIONS.forEach((fn, i) => {
+    temp = temp.replace(new RegExp(fn + '\\(', 'gi'), `__FN${i}__(`);
+  });
+  temp = temp.replace(/([uv])\(/gi, '$1*(');
+  FUNCTIONS.forEach((fn, i) => {
+    temp = temp.replace(new RegExp(`__FN${i}__\\(`, 'g'), fn + '(');
+  });
+  result = temp;
+
+  // Number followed by function: 2sin -> 2*sin
+  FUNCTIONS.forEach(fn => {
+    result = result.replace(new RegExp(`(\\d)(${fn})\\(`, 'gi'), '$1*$2(');
+  });
+  // Variable followed by function: usin -> u*sin
+  FUNCTIONS.forEach(fn => {
+    result = result.replace(new RegExp(`([uv])(${fn})\\(`, 'gi'), '$1*$2(');
+  });
+  // Closing paren followed by function
+  FUNCTIONS.forEach(fn => {
+    result = result.replace(new RegExp(`\\)(${fn})\\(`, 'gi'), ')*$1(');
+  });
+
+  // Convert π symbol to pi for math.js
+  result = result.replace(/π/g, 'pi');
+
+  // Handle implicit multiplication for e and pi
+  result = result.replace(/([uv])(e)(?!xp)/gi, '$1*$2');
+  result = result.replace(/(\d)(e)(?!xp)/gi, '$1*$2');
+  result = result.replace(/\be(?!xp)\(/g, 'e*(');
+  result = result.replace(/\be(?!xp)([uv])/gi, 'e*$1');
+  result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1');
+
+  result = result.replace(/([uv])(pi)\b/gi, '$1*$2');
+  result = result.replace(/(\d)(pi)\b/gi, '$1*$2');
+  result = result.replace(/\bpi\(/gi, 'pi*(');
+  result = result.replace(/\bpi([uv])/gi, 'pi*$1');
+  result = result.replace(/\bpi(\d)/gi, 'pi*$1');
+
+  return result;
+}
+
+export function createParametricEvaluator(expression: string): ParametricEvaluator {
+  try {
+    const processed = preprocessParametricExpression(expression);
+    const compiled = compile(processed);
+    return (u: number, v: number): number | null => {
+      try {
+        const result = compiled.evaluate({ u, v });
+        if (typeof result === 'number' && isFinite(result)) {
+          return result;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+  } catch (error) {
+    throw new Error(`Invalid parametric expression: ${expression}`);
+  }
+}
+
+export function validateParametricExpression(expression: string): { valid: boolean; error?: string } {
+  if (!expression.trim()) {
+    return { valid: false, error: 'Expression cannot be empty' };
+  }
+  try {
+    const processed = preprocessParametricExpression(expression);
+    compile(processed);
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : 'Invalid expression'
+    };
   }
 }
 

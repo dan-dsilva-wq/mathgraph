@@ -7,6 +7,8 @@ import RangeControls from '@/components/RangeControls';
 import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
+import { validateParametricExpression } from '@/lib/mathParser';
+import { ParametricInput } from '@/components/Graph3D';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -72,6 +74,111 @@ const HISTORY_KEY = 'mathgraph-recent-equations';
 const CURRENT_EXPR_KEY = 'mathgraph-current-expressions';
 const CURRENT_RANGES_KEY = 'mathgraph-current-ranges';
 
+type GraphMode = 'explicit' | 'parametric';
+
+interface ParametricExample {
+  name: string;
+  description: string;
+  x: string;
+  y: string;
+  z: string;
+  uRange: [number, number];
+  vRange: [number, number];
+}
+
+const PARAMETRIC_EXAMPLES: ParametricExample[] = [
+  {
+    name: 'Sphere',
+    description: 'Unit sphere',
+    x: 'sin(u) * cos(v)',
+    y: 'sin(u) * sin(v)',
+    z: 'cos(u)',
+    uRange: [0, 3.14159],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Torus',
+    description: 'Donut shape (R=2, r=0.7)',
+    x: '(2 + 0.7*cos(v)) * cos(u)',
+    y: '(2 + 0.7*cos(v)) * sin(u)',
+    z: '0.7 * sin(v)',
+    uRange: [0, 6.28318],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Möbius Strip',
+    description: 'One-sided surface',
+    x: '(1 + v/2 * cos(u/2)) * cos(u)',
+    y: '(1 + v/2 * cos(u/2)) * sin(u)',
+    z: 'v/2 * sin(u/2)',
+    uRange: [0, 6.28318],
+    vRange: [-0.4, 0.4],
+  },
+  {
+    name: 'Helicoid',
+    description: 'Spiral ramp',
+    x: 'u * cos(v)',
+    y: 'u * sin(v)',
+    z: 'v',
+    uRange: [-1, 1],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Klein Bottle',
+    description: 'Non-orientable surface',
+    x: '(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v)) * cos(u)',
+    y: '(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v)) * sin(u)',
+    z: 'sin(u/2)*sin(v) + cos(u/2)*sin(2*v)',
+    uRange: [0, 6.28318],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Trefoil Knot',
+    description: 'Tube around trefoil curve',
+    x: 'sin(u) + 2*sin(2*u) + 0.3*cos(v)*sin(u)*(2+cos(2*u))',
+    y: 'cos(u) - 2*cos(2*u) + 0.3*cos(v)*cos(u)*(2+cos(2*u))',
+    z: '-sin(3*u) + 0.3*sin(v)',
+    uRange: [0, 6.28318],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Cylinder',
+    description: 'Open cylinder',
+    x: 'cos(u)',
+    y: 'sin(u)',
+    z: 'v',
+    uRange: [0, 6.28318],
+    vRange: [-2, 2],
+  },
+  {
+    name: 'Cone',
+    description: 'Parametric cone',
+    x: 'v * cos(u)',
+    y: 'v * sin(u)',
+    z: 'v',
+    uRange: [0, 6.28318],
+    vRange: [0, 2],
+  },
+  {
+    name: 'Figure-8',
+    description: 'Figure-eight immersion',
+    x: '(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v)) * cos(u)',
+    y: '(2 + cos(u/2)*sin(v) - sin(u/2)*sin(2*v)) * sin(u)',
+    z: 'sin(u/2)*sin(v) + cos(u/2)*sin(2*v)',
+    uRange: [0, 6.28318],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Spring',
+    description: 'Helical tube',
+    x: '(1 + 0.3*cos(v))*cos(u)',
+    y: '(1 + 0.3*cos(v))*sin(u)',
+    z: '0.3*sin(v) + u/3',
+    uRange: [0, 18.85],
+    vRange: [0, 6.28318],
+  },
+];
+
 interface HistoryEntry {
   expressions: string[];
   timestamp: number;
@@ -118,6 +225,15 @@ function Graph3DPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [highResolution, setHighResolution] = useState(false);
   const [isLoadingHD, setIsLoadingHD] = useState(false);
+
+  // Parametric mode state
+  const [graphMode, setGraphMode] = useState<GraphMode>('explicit');
+  const [paramXExpr, setParamXExpr] = useState('sin(u) * cos(v)');
+  const [paramYExpr, setParamYExpr] = useState('sin(u) * sin(v)');
+  const [paramZExpr, setParamZExpr] = useState('cos(u)');
+  const [paramURange, setParamURange] = useState<[number, number]>([0, Math.PI]);
+  const [paramVRange, setParamVRange] = useState<[number, number]>([0, 2 * Math.PI]);
+  const [activeParametricSurfaces, setActiveParametricSurfaces] = useState<ParametricInput[]>([]);
 
   // Resolution: 60 for normal, 300 for high (much smoother but slower)
   const resolution = highResolution ? 300 : 60;
@@ -386,6 +502,51 @@ function Graph3DPage() {
     };
   }, [expressions]);
 
+  // Auto-update parametric surface when parametric expressions change (debounced)
+  const paramDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (graphMode !== 'parametric') {
+      setActiveParametricSurfaces([]);
+      return;
+    }
+
+    if (paramDebounceRef.current) {
+      clearTimeout(paramDebounceRef.current);
+    }
+
+    paramDebounceRef.current = setTimeout(() => {
+      const xValid = paramXExpr.trim() && validateParametricExpression(paramXExpr).valid;
+      const yValid = paramYExpr.trim() && validateParametricExpression(paramYExpr).valid;
+      const zValid = paramZExpr.trim() && validateParametricExpression(paramZExpr).valid;
+
+      if (xValid && yValid && zValid) {
+        setActiveParametricSurfaces([{
+          xExpr: paramXExpr,
+          yExpr: paramYExpr,
+          zExpr: paramZExpr,
+          uRange: paramURange,
+          vRange: paramVRange,
+        }]);
+      } else {
+        setActiveParametricSurfaces([]);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (paramDebounceRef.current) {
+        clearTimeout(paramDebounceRef.current);
+      }
+    };
+  }, [graphMode, paramXExpr, paramYExpr, paramZExpr, paramURange, paramVRange]);
+
+  const loadParametricExample = (example: ParametricExample) => {
+    setParamXExpr(example.x);
+    setParamYExpr(example.y);
+    setParamZExpr(example.z);
+    setParamURange(example.uRange);
+    setParamVRange(example.vRange);
+  };
+
   const handleExpressionChange = (index: number, value: string) => {
     // Replace 'pi' with π symbol for display
     const displayValue = value.replace(/\bpi\b/gi, 'π');
@@ -506,7 +667,34 @@ function Graph3DPage() {
             </button>
           </div>
 
-          {/* Multi-Equation Input */}
+          {/* Mode Toggle */}
+          <div className="p-4 border-b border-slate-800">
+            <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+              <button
+                onClick={() => setGraphMode('explicit')}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  graphMode === 'explicit'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                z = f(x,y)
+              </button>
+              <button
+                onClick={() => setGraphMode('parametric')}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  graphMode === 'parametric'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Parametric
+              </button>
+            </div>
+          </div>
+
+          {/* Explicit mode: Multi-Equation Input */}
+          {graphMode === 'explicit' && (
           <div className="p-4 border-b border-slate-800">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide">
@@ -566,8 +754,160 @@ function Graph3DPage() {
               })}
             </div>
           </div>
+          )}
 
-          {/* Calculations - Collapsible Sections */}
+          {/* Parametric mode */}
+          {graphMode === 'parametric' && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+              Parametric Surface (u, v)
+            </h3>
+
+            <div className="space-y-2">
+              {/* x(u,v) */}
+              <div className="flex items-center gap-2">
+                <span className="text-red-400 text-xs font-mono w-6 text-right flex-shrink-0">x =</span>
+                <input
+                  type="text"
+                  value={paramXExpr}
+                  onChange={(e) => setParamXExpr(e.target.value)}
+                  placeholder="sin(u) * cos(v)"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    paramXExpr.trim() && !validateParametricExpression(paramXExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              {/* y(u,v) */}
+              <div className="flex items-center gap-2">
+                <span className="text-blue-400 text-xs font-mono w-6 text-right flex-shrink-0">y =</span>
+                <input
+                  type="text"
+                  value={paramYExpr}
+                  onChange={(e) => setParamYExpr(e.target.value)}
+                  placeholder="sin(u) * sin(v)"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    paramYExpr.trim() && !validateParametricExpression(paramYExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              {/* z(u,v) */}
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 text-xs font-mono w-6 text-right flex-shrink-0">z =</span>
+                <input
+                  type="text"
+                  value={paramZExpr}
+                  onChange={(e) => setParamZExpr(e.target.value)}
+                  placeholder="cos(u)"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    paramZExpr.trim() && !validateParametricExpression(paramZExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Parameter ranges */}
+            <div className="mt-4 space-y-3">
+              <h4 className="text-xs text-slate-500">Parameter Ranges</h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-mono w-6 text-right flex-shrink-0">u:</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={paramURange[0].toFixed(paramURange[0] === Math.round(paramURange[0]) ? 0 : 5)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setParamURange([v, paramURange[1]]);
+                    }}
+                    className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                  />
+                  <span className="text-slate-500 text-xs">to</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={paramURange[1].toFixed(paramURange[1] === Math.round(paramURange[1]) ? 0 : 5)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setParamURange([paramURange[0], v]);
+                    }}
+                    className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-mono w-6 text-right flex-shrink-0">v:</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={paramVRange[0].toFixed(paramVRange[0] === Math.round(paramVRange[0]) ? 0 : 5)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setParamVRange([v, paramVRange[1]]);
+                    }}
+                    className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                  />
+                  <span className="text-slate-500 text-xs">to</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={paramVRange[1].toFixed(paramVRange[1] === Math.round(paramVRange[1]) ? 0 : 5)}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setParamVRange([paramVRange[0], v]);
+                    }}
+                    className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                  />
+                </div>
+              </div>
+              {/* Quick range buttons */}
+              <div className="flex gap-1 flex-wrap">
+                <button
+                  onClick={() => { setParamURange([0, Math.PI]); setParamVRange([0, 2 * Math.PI]); }}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0,π]×[0,2π]
+                </button>
+                <button
+                  onClick={() => { setParamURange([0, 2 * Math.PI]); setParamVRange([0, 2 * Math.PI]); }}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0,2π]×[0,2π]
+                </button>
+                <button
+                  onClick={() => { setParamURange([-Math.PI, Math.PI]); setParamVRange([-Math.PI, Math.PI]); }}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [-π,π]×[-π,π]
+                </button>
+                <button
+                  onClick={() => { setParamURange([-2, 2]); setParamVRange([-2, 2]); }}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [-2,2]×[-2,2]
+                </button>
+              </div>
+            </div>
+
+            {/* Parametric Examples */}
+            <div className="mt-4">
+              <h4 className="text-xs text-slate-500 mb-2">Examples</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {PARAMETRIC_EXAMPLES.map((example) => (
+                  <button
+                    key={example.name}
+                    onClick={() => loadParametricExample(example)}
+                    className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md transition-colors border border-slate-700 hover:border-slate-600"
+                    title={example.description}
+                  >
+                    {example.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Calculations - Collapsible Sections (explicit mode only) */}
+          {graphMode === 'explicit' && (
           <div className="border-b border-slate-800">
             <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide px-4 pt-4 pb-2">Calculations</h3>
             <div className="bg-slate-800/30 rounded-lg mx-3 mb-3 overflow-hidden">
@@ -919,8 +1259,10 @@ function Graph3DPage() {
               })()}
             </div>
           </div>
+          )}
 
-          {/* Range Controls */}
+          {/* Range Controls (explicit mode only) */}
+          {graphMode === 'explicit' && (
           <div className="p-4 border-b border-slate-800">
             <RangeControls
               xRange={xRange}
@@ -933,6 +1275,7 @@ function Graph3DPage() {
               onAutoZRangeChange={setAutoZRange}
             />
           </div>
+          )}
 
           {/* Display Options */}
           <div className="p-4 border-b border-slate-800">
@@ -1008,9 +1351,15 @@ function Graph3DPage() {
 
           {/* Tips - pushed to bottom */}
           <div className="mt-auto p-4 border-t border-slate-800">
-            <p className="text-xs text-slate-500 mb-2">
-              Add multiple functions to see intersections. Use notation like x^2, sin(x), cos(y), exp(-x^2)
-            </p>
+            {graphMode === 'explicit' ? (
+              <p className="text-xs text-slate-500 mb-2">
+                Add multiple functions to see intersections. Use notation like x^2, sin(x), cos(y), exp(-x^2)
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 mb-2">
+                Define x(u,v), y(u,v), z(u,v) to create parametric surfaces. Try the examples for spheres, tori, and more.
+              </p>
+            )}
             <p className="text-xs text-slate-600">
               <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Enter</kbd> graph &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">Esc</kbd> clear &middot; <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">F</kbd> fullscreen
             </p>
@@ -1021,14 +1370,15 @@ function Graph3DPage() {
         <div className="flex-1 p-2 md:p-4 min-w-0 relative">
           <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl">
             <Graph3D
-              expressions={activeExpressions}
+              expressions={graphMode === 'explicit' ? activeExpressions : []}
               xRange={xRange}
               yRange={yRange}
               zRange={autoZRange ? undefined : userZRange}
               resolution={resolution}
               showSurfaceGrid={showSurfaceGrid}
-              showVolumeVisualization={volumeMode}
+              showVolumeVisualization={graphMode === 'explicit' && volumeMode}
               volumeFillDirections={volumeFillDirections}
+              parametricSurfaces={graphMode === 'parametric' ? activeParametricSurfaces : []}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />
