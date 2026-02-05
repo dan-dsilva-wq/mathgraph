@@ -16,7 +16,22 @@
       "Bash(node:*)",
       "Bash(vercel ls:*)",
       "Bash(vercel inspect:*)",
-      "WebFetch(domain:mathgraph.vercel.app)"
+      "WebFetch(domain:mathgraph.vercel.app)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run lint)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(npm run dev:*)",
+      "Bash(git checkout:*)",
+      "Bash(curl:*)",
+      "Bash(claude install)",
+      "Bash(timeout:*)",
+      "Bash(ls:*)",
+      "Bash(ping:*)",
+      "Bash(taskkill //F //PID 20820)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(echo:*)"
     ]
   }
 }
