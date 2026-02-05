@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createEvaluator, createDerivativeEvaluators } from '../mathParser';
+import { createEvaluator, createAnimatedEvaluator, createDerivativeEvaluators } from '../mathParser';
 import { getColorForZWithPalette, getUndefinedColor } from './colors';
 import {
   IntegrationResult,
@@ -18,6 +18,7 @@ interface SurfaceOptions {
   globalZMin?: number; // For consistent scaling across multiple surfaces
   globalZMax?: number; // For consistent scaling across multiple surfaces
   zClipRange?: [number, number]; // User-specified z range for clipping
+  time?: number; // Time parameter for animated surfaces
 }
 
 export interface CriticalPoint {
@@ -52,8 +53,13 @@ interface SurfaceResult {
 }
 
 export function generateSurface(options: SurfaceOptions): SurfaceResult {
-  const { expression, xRange, yRange, resolution, functionIndex = 0, globalZMin, globalZMax, zClipRange } = options;
-  const evaluate = createEvaluator(expression);
+  const { expression, xRange, yRange, resolution, functionIndex = 0, globalZMin, globalZMax, zClipRange, time } = options;
+
+  // Use animated evaluator when time is provided, wrapping it to match Evaluator signature
+  const rawEvaluate = time !== undefined ? createAnimatedEvaluator(expression) : null;
+  const evaluate = time !== undefined && rawEvaluate
+    ? (x: number, y: number) => rawEvaluate(x, y, time)
+    : createEvaluator(expression);
 
   const [xMin, xMax] = xRange;
   const [yMin, yMax] = yRange;
@@ -631,10 +637,14 @@ export function calculateZRange(
   xRange: [number, number],
   yRange: [number, number],
   resolution: number,
-  zClipRange?: [number, number]
+  zClipRange?: [number, number],
+  time?: number
 ): { zMin: number; zMax: number } | null {
   try {
-    const evaluate = createEvaluator(expression);
+    const rawEvaluate = time !== undefined ? createAnimatedEvaluator(expression) : null;
+    const evaluate = time !== undefined && rawEvaluate
+      ? (x: number, y: number) => rawEvaluate(x, y, time)
+      : createEvaluator(expression);
     const [xMin, xMax] = xRange;
     const [yMin, yMax] = yRange;
     const xStep = (xMax - xMin) / resolution;

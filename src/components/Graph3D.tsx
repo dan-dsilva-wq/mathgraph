@@ -40,6 +40,7 @@ interface Graph3DProps {
   showVolumeVisualization?: boolean; // Show semi-transparent volume between first two surfaces
   volumeFillDirections?: ('above' | 'below')[]; // Fill direction for each surface
   parametricSurfaces?: ParametricInput[]; // Parametric surfaces to render
+  time?: number; // Time parameter for animated surfaces
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
     surfaceAreas: SurfaceStats[];
@@ -59,6 +60,7 @@ export default function Graph3D({
   showVolumeVisualization = false,
   volumeFillDirections = ['below', 'above'],
   parametricSurfaces = [],
+  time,
   onZRangeChange,
   onStatsChange,
 }: Graph3DProps) {
@@ -533,7 +535,7 @@ export default function Graph3D({
       let actualZMax = -Infinity;
 
       validExpressions.forEach(({ expression }) => {
-        const range = calculateZRange(expression, xRange, yRange, resolution); // No clip filter
+        const range = calculateZRange(expression, xRange, yRange, resolution, undefined, time); // No clip filter
         if (range) {
           actualZMin = Math.min(actualZMin, range.zMin);
           actualZMax = Math.max(actualZMax, range.zMax);
@@ -602,6 +604,7 @@ export default function Graph3D({
             globalZMin,
             globalZMax,
             zClipRange: zRange, // Pass user z range for clipping
+            time, // Pass time for animated surfaces
           });
 
           // Store transform for hover coordinate conversion (use first surface's transform)
@@ -680,6 +683,7 @@ export default function Graph3D({
             vRange: param.vRange,
             resolution: Math.min(resolution, 100),
             functionIndex: validExpressions.length + index,
+            time, // Pass time for animated parametric surfaces
           });
 
           // Store transform for hover coordinate conversion
@@ -861,7 +865,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, time, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import RangeControls from '@/components/RangeControls';
 import { getFunctionColor } from '@/lib/graphing/colors';
-import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives } from '@/lib/mathParser';
+import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives, expressionUsesTime, parametricExpressionUsesTime } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import { validateParametricExpression } from '@/lib/mathParser';
 import { ParametricInput } from '@/components/Graph3D';
@@ -179,6 +179,87 @@ const PARAMETRIC_EXAMPLES: ParametricExample[] = [
   },
 ];
 
+// Animated explicit examples that use 't' for time
+interface AnimatedExample {
+  name: string;
+  description: string;
+  expression: string;
+}
+
+const ANIMATED_EXAMPLES: AnimatedExample[] = [
+  {
+    name: 'Traveling Wave',
+    description: 'Wave propagating across the surface',
+    expression: 'sin(x - t) * cos(y - t)',
+  },
+  {
+    name: 'Ripple',
+    description: 'Expanding circular ripple',
+    expression: 'sin(sqrt(x^2 + y^2) - 2t) / (1 + sqrt(x^2 + y^2)/5)',
+  },
+  {
+    name: 'Breathing',
+    description: 'Surface that breathes in and out',
+    expression: '(x^2 + y^2) * (0.5 + 0.5*sin(t))',
+  },
+  {
+    name: 'Rotating Saddle',
+    description: 'Hyperbolic paraboloid that rotates',
+    expression: '(x*cos(t) - y*sin(t))^2 - (x*sin(t) + y*cos(t))^2',
+  },
+  {
+    name: 'Ocean',
+    description: 'Multi-frequency ocean waves',
+    expression: 'sin(x - t) + 0.5*sin(2y + 1.5t) + 0.3*cos(3x + 2y - 2t)',
+  },
+  {
+    name: 'Pulse',
+    description: 'Gaussian pulse that expands',
+    expression: '3*exp(-((x-sin(t)*2)^2 + (y-cos(t)*2)^2))',
+  },
+];
+
+// Animated parametric examples
+interface AnimatedParametricExample {
+  name: string;
+  description: string;
+  x: string;
+  y: string;
+  z: string;
+  uRange: [number, number];
+  vRange: [number, number];
+}
+
+const ANIMATED_PARAMETRIC_EXAMPLES: AnimatedParametricExample[] = [
+  {
+    name: 'Breathing Sphere',
+    description: 'Sphere that pulses',
+    x: '(1 + 0.3*sin(3*u + t)*sin(3*v + t)) * sin(u) * cos(v)',
+    y: '(1 + 0.3*sin(3*u + t)*sin(3*v + t)) * sin(u) * sin(v)',
+    z: '(1 + 0.3*sin(3*u + t)*sin(3*v + t)) * cos(u)',
+    uRange: [0, 3.14159],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Spinning Torus',
+    description: 'Torus with rotating bumps',
+    x: '(2 + (0.7 + 0.2*sin(3*v + t))*cos(v)) * cos(u)',
+    y: '(2 + (0.7 + 0.2*sin(3*v + t))*cos(v)) * sin(u)',
+    z: '(0.7 + 0.2*sin(3*v + t)) * sin(v)',
+    uRange: [0, 6.28318],
+    vRange: [0, 6.28318],
+  },
+  {
+    name: 'Morphing Shape',
+    description: 'Sphere morphing to a star',
+    x: '(1 + 0.5*sin(5*u)*sin(t)^2) * sin(u) * cos(v)',
+    y: '(1 + 0.5*sin(5*u)*sin(t)^2) * sin(u) * sin(v)',
+    z: '(1 + 0.5*sin(5*v)*sin(t)^2) * cos(u)',
+    uRange: [0, 3.14159],
+    vRange: [0, 6.28318],
+  },
+];
+
 interface HistoryEntry {
   expressions: string[];
   timestamp: number;
@@ -235,8 +316,63 @@ function Graph3DPage() {
   const [paramVRange, setParamVRange] = useState<[number, number]>([0, 2 * Math.PI]);
   const [activeParametricSurfaces, setActiveParametricSurfaces] = useState<ParametricInput[]>([]);
 
+  // Animation state
+  const [animationTime, setAnimationTime] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState(1);
+  const animationRef = useRef<number | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
+
+  // Detect if any expression uses the time variable 't'
+  const usesTime = graphMode === 'explicit'
+    ? expressions.some(expr => expr.trim() && expressionUsesTime(expr))
+    : (parametricExpressionUsesTime(paramXExpr) ||
+       parametricExpressionUsesTime(paramYExpr) ||
+       parametricExpressionUsesTime(paramZExpr));
+
+  // Auto-start animation when expressions use 't'
+  useEffect(() => {
+    if (usesTime && !isAnimating) {
+      setIsAnimating(true);
+    }
+    // Don't auto-stop: let user control pause
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usesTime]);
+
+  // Animation loop
+  useEffect(() => {
+    if (!isAnimating) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return;
+    }
+
+    const animate = (timestamp: number) => {
+      if (lastFrameTimeRef.current === 0) {
+        lastFrameTimeRef.current = timestamp;
+      }
+      const delta = (timestamp - lastFrameTimeRef.current) / 1000; // seconds
+      lastFrameTimeRef.current = timestamp;
+
+      setAnimationTime(prev => prev + delta * animationSpeed);
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    lastFrameTimeRef.current = 0;
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [isAnimating, animationSpeed]);
+
+  // Use lower resolution during animation for smooth playback
   // Resolution: 60 for normal, 300 for high (much smoother but slower)
-  const resolution = highResolution ? 300 : 60;
+  const resolution = highResolution ? 300 : (isAnimating ? 40 : 60);
 
   // Handle HD toggle with loading state
   const toggleHighResolution = useCallback(() => {
@@ -756,6 +892,30 @@ function Graph3DPage() {
           </div>
           )}
 
+          {/* Animated Examples (explicit mode) */}
+          {graphMode === 'explicit' && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+              Animated Examples <span className="text-blue-400 normal-case">(use t for time)</span>
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {ANIMATED_EXAMPLES.map((example) => (
+                <button
+                  key={example.name}
+                  onClick={() => {
+                    setExpressions([example.expression]);
+                    setAnimationTime(0);
+                  }}
+                  className="px-2.5 py-1 text-xs bg-blue-900/40 hover:bg-blue-800/50 text-blue-300 rounded-md transition-colors border border-blue-700/40 hover:border-blue-600/50"
+                  title={example.description}
+                >
+                  {example.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          )}
+
           {/* Parametric mode */}
           {graphMode === 'parametric' && (
           <div className="p-4 border-b border-slate-800">
@@ -896,6 +1056,30 @@ function Graph3DPage() {
                     key={example.name}
                     onClick={() => loadParametricExample(example)}
                     className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md transition-colors border border-slate-700 hover:border-slate-600"
+                    title={example.description}
+                  >
+                    {example.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Animated Parametric Examples */}
+            <div className="mt-3">
+              <h4 className="text-xs text-slate-500 mb-2">Animated <span className="text-blue-400">(use t)</span></h4>
+              <div className="flex flex-wrap gap-1.5">
+                {ANIMATED_PARAMETRIC_EXAMPLES.map((example) => (
+                  <button
+                    key={example.name}
+                    onClick={() => {
+                      setParamXExpr(example.x);
+                      setParamYExpr(example.y);
+                      setParamZExpr(example.z);
+                      setParamURange(example.uRange);
+                      setParamVRange(example.vRange);
+                      setAnimationTime(0);
+                    }}
+                    className="px-2.5 py-1 text-xs bg-blue-900/40 hover:bg-blue-800/50 text-blue-300 rounded-md transition-colors border border-blue-700/40 hover:border-blue-600/50"
                     title={example.description}
                   >
                     {example.name}
@@ -1277,6 +1461,91 @@ function Graph3DPage() {
           </div>
           )}
 
+          {/* Animation Controls - visible when expressions use 't' */}
+          {usesTime && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+              <span className="inline-flex items-center gap-1.5">
+                Animation
+                <span className={`inline-block w-2 h-2 rounded-full ${isAnimating ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
+              </span>
+            </h3>
+            <div className="space-y-3">
+              {/* Play/Pause + Reset */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAnimating(!isAnimating)}
+                  className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    isAnimating
+                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                      : 'bg-green-600 hover:bg-green-500 text-white'
+                  }`}
+                >
+                  {isAnimating ? (
+                    <span className="flex items-center justify-center gap-1">
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                      Pause
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-1">
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21" /></svg>
+                      Play
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setAnimationTime(0); }}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-xs transition-colors"
+                  title="Reset time to 0"
+                >
+                  Reset
+                </button>
+              </div>
+
+              {/* Time display */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-mono">t = {animationTime.toFixed(2)}</span>
+                <span className="text-slate-600 font-mono">{animationSpeed}x speed</span>
+              </div>
+
+              {/* Time slider (manual scrub) */}
+              <div>
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(20, Math.ceil(animationTime / 10) * 10 + 10)}
+                  step="0.05"
+                  value={animationTime}
+                  onChange={(e) => {
+                    const newTime = parseFloat(e.target.value);
+                    setAnimationTime(newTime);
+                    if (isAnimating) setIsAnimating(false);
+                  }}
+                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+
+              {/* Speed controls */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-500 mr-1">Speed:</span>
+                {[0.25, 0.5, 1, 2, 4].map(speed => (
+                  <button
+                    key={speed}
+                    onClick={() => setAnimationSpeed(speed)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                      animationSpeed === speed
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                    }`}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
           {/* Display Options */}
           <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Display Options</h3>
@@ -1353,11 +1622,11 @@ function Graph3DPage() {
           <div className="mt-auto p-4 border-t border-slate-800">
             {graphMode === 'explicit' ? (
               <p className="text-xs text-slate-500 mb-2">
-                Add multiple functions to see intersections. Use notation like x^2, sin(x), cos(y), exp(-x^2)
+                Use <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400 text-[10px]">t</kbd> for animation. Try: sin(x - t) * cos(y). Also supports x^2, sin(x), cos(y), exp(-x^2)
               </p>
             ) : (
               <p className="text-xs text-slate-500 mb-2">
-                Define x(u,v), y(u,v), z(u,v) to create parametric surfaces. Try the examples for spheres, tori, and more.
+                Define x(u,v), y(u,v), z(u,v) for parametric surfaces. Use <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400 text-[10px]">t</kbd> for animation.
               </p>
             )}
             <p className="text-xs text-slate-600">
@@ -1379,6 +1648,7 @@ function Graph3DPage() {
               showVolumeVisualization={graphMode === 'explicit' && volumeMode}
               volumeFillDirections={volumeFillDirections}
               parametricSurfaces={graphMode === 'parametric' ? activeParametricSurfaces : []}
+              time={usesTime ? animationTime : undefined}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
             />

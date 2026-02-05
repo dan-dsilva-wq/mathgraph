@@ -1,7 +1,9 @@
 import { compile, simplify, parse, derivative, rationalize, MathNode } from 'mathjs';
 
 export type Evaluator = (x: number, y: number) => number | null;
+export type AnimatedEvaluator = (x: number, y: number, t: number) => number | null;
 export type ParametricEvaluator = (u: number, v: number) => number | null;
+export type AnimatedParametricEvaluator = (u: number, v: number, t: number) => number | null;
 
 // List of known function names to avoid breaking
 const FUNCTIONS = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
@@ -23,25 +25,25 @@ const FUNCTIONS = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 
 function preprocessExpression(expr: string): string {
   let result = expr;
 
-  // Auto-add brackets for trig functions without them: sinx -> sin(x), cosy -> cos(y)
+  // Auto-add brackets for trig functions without them: sinx -> sin(x), cosy -> cos(y), sint -> sin(t)
   FUNCTIONS.forEach(fn => {
-    // Match function name followed directly by x or y (not already having parenthesis)
-    // e.g., sinx, cosy, tanx, expx, sqrtx
-    result = result.replace(new RegExp(`(${fn})([xy])(?![a-z0-9(])`, 'gi'), '$1($2)');
+    // Match function name followed directly by x, y, or t (not already having parenthesis)
+    // e.g., sinx, cosy, tant, expx, sqrtx
+    result = result.replace(new RegExp(`(${fn})([xyt])(?![a-z0-9(])`, 'gi'), '$1($2)');
     // Also handle cases like sinxy -> sin(x)*y or sinx+cosy
-    result = result.replace(new RegExp(`(${fn})([xy])([+\\-*/^])`, 'gi'), '$1($2)$3');
+    result = result.replace(new RegExp(`(${fn})([xyt])([+\\-*/^])`, 'gi'), '$1($2)$3');
     // Handle at end of string
-    result = result.replace(new RegExp(`(${fn})([xy])$`, 'gi'), '$1($2)');
+    result = result.replace(new RegExp(`(${fn})([xyt])$`, 'gi'), '$1($2)');
   });
 
-  // Number followed by variable: 2x -> 2*x, 2y -> 2*y
-  result = result.replace(/(\d)([xy])/gi, '$1*$2');
+  // Number followed by variable: 2x -> 2*x, 2y -> 2*y, 2t -> 2*t
+  result = result.replace(/(\d)([xyt])/gi, '$1*$2');
 
-  // Variable followed by number: x2 -> x*2, y3 -> y*3
-  result = result.replace(/([xy])(\d)/gi, '$1*$2');
+  // Variable followed by number: x2 -> x*2, y3 -> y*3, t2 -> t*2
+  result = result.replace(/([xyt])(\d)/gi, '$1*$2');
 
-  // Variable followed by variable: xy -> x*y
-  result = result.replace(/([xy])([xy])/gi, '$1*$2');
+  // Variable followed by variable: xy -> x*y, xt -> x*t, etc.
+  result = result.replace(/([xyt])([xyt])/gi, '$1*$2');
 
   // Number followed by opening paren: 2( -> 2*(
   result = result.replace(/(\d)\(/g, '$1*(');
@@ -53,7 +55,7 @@ function preprocessExpression(expr: string): string {
   result = result.replace(/\)(\d)/g, ')*$1');
 
   // Closing paren followed by variable: )x -> )*x
-  result = result.replace(/\)([xy])/gi, ')*$1');
+  result = result.replace(/\)([xyt])/gi, ')*$1');
 
   // Variable followed by opening paren (but not a function): x( -> x*(
   // First, temporarily replace function names
@@ -62,7 +64,7 @@ function preprocessExpression(expr: string): string {
     temp = temp.replace(new RegExp(fn + '\\(', 'gi'), `__FN${i}__(`);
   });
   // Now add multiplication for variable followed by (
-  temp = temp.replace(/([xy])\(/gi, '$1*(');
+  temp = temp.replace(/([xyt])\(/gi, '$1*(');
   // Restore function names
   FUNCTIONS.forEach((fn, i) => {
     temp = temp.replace(new RegExp(`__FN${i}__\\(`, 'g'), fn + '(');
@@ -76,7 +78,7 @@ function preprocessExpression(expr: string): string {
 
   // Variable followed by function: xsin -> x*sin
   FUNCTIONS.forEach(fn => {
-    result = result.replace(new RegExp(`([xy])(${fn})\\(`, 'gi'), '$1*$2(');
+    result = result.replace(new RegExp(`([xyt])(${fn})\\(`, 'gi'), '$1*$2(');
   });
 
   // Closing paren followed by function: )sin -> )*sin
@@ -90,21 +92,21 @@ function preprocessExpression(expr: string): string {
   // Handle implicit multiplication for constants e (Euler's number) and pi
   // Use negative lookahead to avoid matching 'e' in 'exp'
   //
-  // First handle variable/number followed by e: ye -> y*e, xe -> x*e, 3e -> 3*e
+  // First handle variable/number followed by e: ye -> y*e, xe -> x*e, te -> t*e, 3e -> 3*e
   // (must come before e followed by variable, so yex -> y*ex -> y*e*x)
-  result = result.replace(/([xy])(e)(?!xp)/gi, '$1*$2');  // ye -> y*e, but not yexp
+  result = result.replace(/([xyt])(e)(?!xp)/gi, '$1*$2');  // ye -> y*e, but not yexp
   result = result.replace(/(\d)(e)(?!xp)/gi, '$1*$2');     // 3e -> 3*e, but not 3exp
 
   // Then handle e followed by variable/number/paren: ex -> e*x, e3 -> e*3, e( -> e*(
   result = result.replace(/\be(?!xp)\(/g, 'e*(');
-  result = result.replace(/\be(?!xp)([xy])/gi, 'e*$1');
+  result = result.replace(/\be(?!xp)([xyt])/gi, 'e*$1');
   result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1');
 
   // Handle pi similarly
-  result = result.replace(/([xy])(pi)\b/gi, '$1*$2');      // xpi -> x*pi
+  result = result.replace(/([xyt])(pi)\b/gi, '$1*$2');      // xpi -> x*pi
   result = result.replace(/(\d)(pi)\b/gi, '$1*$2');        // 3pi -> 3*pi
   result = result.replace(/\bpi\(/gi, 'pi*(');
-  result = result.replace(/\bpi([xy])/gi, 'pi*$1');
+  result = result.replace(/\bpi([xyt])/gi, 'pi*$1');
   result = result.replace(/\bpi(\d)/gi, 'pi*$1');
 
   return result;
@@ -131,24 +133,63 @@ export function createEvaluator(expression: string): Evaluator {
 }
 
 /**
+ * Create an evaluator that also accepts a time parameter 't' for animated surfaces.
+ * When t is provided, expressions containing 't' will animate over time.
+ */
+export function createAnimatedEvaluator(expression: string): AnimatedEvaluator {
+  try {
+    const processed = preprocessExpression(expression);
+    const compiled = compile(processed);
+    return (x: number, y: number, t: number): number | null => {
+      try {
+        const result = compiled.evaluate({ x, y, t });
+        if (typeof result === 'number' && isFinite(result)) {
+          return result;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+  } catch (error) {
+    throw new Error(`Invalid expression: ${expression}`);
+  }
+}
+
+/**
+ * Check if an expression uses the time variable 't'.
+ * Used to determine if animation should be enabled.
+ */
+export function expressionUsesTime(expression: string): boolean {
+  // Check for 't' as a standalone variable (not part of function names like 'tan', 'atan', 'sqrt', 'atan2')
+  const processed = preprocessExpression(expression);
+  // Remove function names that contain 't'
+  const withoutFunctions = processed
+    .replace(/\b(tan|atan|atan2|sqrt|tanh|atanh|cot|acot)\b/gi, '___')
+    .replace(/\b(abs|log|log10|log2)\b/gi, '___');
+  // Check if 't' remains as a variable
+  return /\bt\b/.test(withoutFunctions);
+}
+
+/**
  * Preprocess expression for parametric mode (u,v variables instead of x,y)
  */
 function preprocessParametricExpression(expr: string): string {
   let result = expr;
 
-  // Auto-add brackets for trig functions without them: sinu -> sin(u), cosv -> cos(v)
+  // Auto-add brackets for trig functions without them: sinu -> sin(u), cosv -> cos(v), sint -> sin(t)
   FUNCTIONS.forEach(fn => {
-    result = result.replace(new RegExp(`(${fn})([uv])(?![a-z0-9(])`, 'gi'), '$1($2)');
-    result = result.replace(new RegExp(`(${fn})([uv])([+\\-*/^])`, 'gi'), '$1($2)$3');
-    result = result.replace(new RegExp(`(${fn})([uv])$`, 'gi'), '$1($2)');
+    result = result.replace(new RegExp(`(${fn})([uvt])(?![a-z0-9(])`, 'gi'), '$1($2)');
+    result = result.replace(new RegExp(`(${fn})([uvt])([+\\-*/^])`, 'gi'), '$1($2)$3');
+    result = result.replace(new RegExp(`(${fn})([uvt])$`, 'gi'), '$1($2)');
   });
 
-  // Number followed by variable: 2u -> 2*u
-  result = result.replace(/(\d)([uv])/gi, '$1*$2');
-  // Variable followed by number: u2 -> u*2
-  result = result.replace(/([uv])(\d)/gi, '$1*$2');
-  // Variable followed by variable: uv -> u*v
-  result = result.replace(/([uv])([uv])/gi, '$1*$2');
+  // Number followed by variable: 2u -> 2*u, 2t -> 2*t
+  result = result.replace(/(\d)([uvt])/gi, '$1*$2');
+  // Variable followed by number: u2 -> u*2, t2 -> t*2
+  result = result.replace(/([uvt])(\d)/gi, '$1*$2');
+  // Variable followed by variable: uv -> u*v, ut -> u*t
+  result = result.replace(/([uvt])([uvt])/gi, '$1*$2');
   // Number followed by opening paren: 2( -> 2*(
   result = result.replace(/(\d)\(/g, '$1*(');
   // Closing paren followed by opening paren: )( -> )*(
@@ -156,14 +197,14 @@ function preprocessParametricExpression(expr: string): string {
   // Closing paren followed by number: )2 -> )*2
   result = result.replace(/\)(\d)/g, ')*$1');
   // Closing paren followed by variable: )u -> )*u
-  result = result.replace(/\)([uv])/gi, ')*$1');
+  result = result.replace(/\)([uvt])/gi, ')*$1');
 
   // Variable followed by opening paren (but not a function): u( -> u*(
   let temp = result;
   FUNCTIONS.forEach((fn, i) => {
     temp = temp.replace(new RegExp(fn + '\\(', 'gi'), `__FN${i}__(`);
   });
-  temp = temp.replace(/([uv])\(/gi, '$1*(');
+  temp = temp.replace(/([uvt])\(/gi, '$1*(');
   FUNCTIONS.forEach((fn, i) => {
     temp = temp.replace(new RegExp(`__FN${i}__\\(`, 'g'), fn + '(');
   });
@@ -175,7 +216,7 @@ function preprocessParametricExpression(expr: string): string {
   });
   // Variable followed by function: usin -> u*sin
   FUNCTIONS.forEach(fn => {
-    result = result.replace(new RegExp(`([uv])(${fn})\\(`, 'gi'), '$1*$2(');
+    result = result.replace(new RegExp(`([uvt])(${fn})\\(`, 'gi'), '$1*$2(');
   });
   // Closing paren followed by function
   FUNCTIONS.forEach(fn => {
@@ -186,16 +227,16 @@ function preprocessParametricExpression(expr: string): string {
   result = result.replace(/π/g, 'pi');
 
   // Handle implicit multiplication for e and pi
-  result = result.replace(/([uv])(e)(?!xp)/gi, '$1*$2');
+  result = result.replace(/([uvt])(e)(?!xp)/gi, '$1*$2');
   result = result.replace(/(\d)(e)(?!xp)/gi, '$1*$2');
   result = result.replace(/\be(?!xp)\(/g, 'e*(');
-  result = result.replace(/\be(?!xp)([uv])/gi, 'e*$1');
+  result = result.replace(/\be(?!xp)([uvt])/gi, 'e*$1');
   result = result.replace(/\be(?!xp)(\d)/gi, 'e*$1');
 
-  result = result.replace(/([uv])(pi)\b/gi, '$1*$2');
+  result = result.replace(/([uvt])(pi)\b/gi, '$1*$2');
   result = result.replace(/(\d)(pi)\b/gi, '$1*$2');
   result = result.replace(/\bpi\(/gi, 'pi*(');
-  result = result.replace(/\bpi([uv])/gi, 'pi*$1');
+  result = result.replace(/\bpi([uvt])/gi, 'pi*$1');
   result = result.replace(/\bpi(\d)/gi, 'pi*$1');
 
   return result;
@@ -219,6 +260,40 @@ export function createParametricEvaluator(expression: string): ParametricEvaluat
   } catch (error) {
     throw new Error(`Invalid parametric expression: ${expression}`);
   }
+}
+
+/**
+ * Create a parametric evaluator that also accepts a time parameter 't' for animation.
+ */
+export function createAnimatedParametricEvaluator(expression: string): AnimatedParametricEvaluator {
+  try {
+    const processed = preprocessParametricExpression(expression);
+    const compiled = compile(processed);
+    return (u: number, v: number, t: number): number | null => {
+      try {
+        const result = compiled.evaluate({ u, v, t });
+        if (typeof result === 'number' && isFinite(result)) {
+          return result;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+  } catch (error) {
+    throw new Error(`Invalid parametric expression: ${expression}`);
+  }
+}
+
+/**
+ * Check if a parametric expression uses the time variable 't'.
+ */
+export function parametricExpressionUsesTime(expression: string): boolean {
+  const processed = preprocessParametricExpression(expression);
+  const withoutFunctions = processed
+    .replace(/\b(tan|atan|atan2|sqrt|tanh|atanh|cot|acot)\b/gi, '___')
+    .replace(/\b(abs|log|log10|log2)\b/gi, '___');
+  return /\bt\b/.test(withoutFunctions);
 }
 
 export function validateParametricExpression(expression: string): { valid: boolean; error?: string } {

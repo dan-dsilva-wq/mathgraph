@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { createParametricEvaluator } from '../mathParser';
+import { createParametricEvaluator, createAnimatedParametricEvaluator } from '../mathParser';
 import { getColorForZWithPalette, getUndefinedColor } from './colors';
 
 export interface ParametricSurfaceOptions {
-  xExpr: string;  // x(u,v)
-  yExpr: string;  // y(u,v)
-  zExpr: string;  // z(u,v)
+  xExpr: string;  // x(u,v) or x(u,v,t)
+  yExpr: string;  // y(u,v) or y(u,v,t)
+  zExpr: string;  // z(u,v) or z(u,v,t)
   uRange: [number, number];
   vRange: [number, number];
   resolution: number;
   functionIndex?: number;
+  time?: number;  // Time parameter for animation
 }
 
 export interface ParametricSurfaceResult {
@@ -36,11 +37,22 @@ export interface ParametricSurfaceResult {
 }
 
 export function generateParametricSurface(options: ParametricSurfaceOptions): ParametricSurfaceResult {
-  const { xExpr, yExpr, zExpr, uRange, vRange, resolution, functionIndex = 0 } = options;
+  const { xExpr, yExpr, zExpr, uRange, vRange, resolution, functionIndex = 0, time } = options;
 
-  const evalX = createParametricEvaluator(xExpr);
-  const evalY = createParametricEvaluator(yExpr);
-  const evalZ = createParametricEvaluator(zExpr);
+  // Use animated evaluators when time is provided
+  const rawEvalX = time !== undefined ? createAnimatedParametricEvaluator(xExpr) : null;
+  const rawEvalY = time !== undefined ? createAnimatedParametricEvaluator(yExpr) : null;
+  const rawEvalZ = time !== undefined ? createAnimatedParametricEvaluator(zExpr) : null;
+
+  const evalX = time !== undefined && rawEvalX
+    ? (u: number, v: number) => rawEvalX(u, v, time)
+    : createParametricEvaluator(xExpr);
+  const evalY = time !== undefined && rawEvalY
+    ? (u: number, v: number) => rawEvalY(u, v, time)
+    : createParametricEvaluator(yExpr);
+  const evalZ = time !== undefined && rawEvalZ
+    ? (u: number, v: number) => rawEvalZ(u, v, time)
+    : createParametricEvaluator(zExpr);
 
   const [uMin, uMax] = uRange;
   const [vMin, vMax] = vRange;
