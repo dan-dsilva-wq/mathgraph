@@ -8,7 +8,7 @@ import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives, expressionUsesTime, parametricExpressionUsesTime } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import { validateParametricExpression } from '@/lib/mathParser';
-import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInput, CrossSectionInput, LevelCurvesInput } from '@/components/Graph3D';
+import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInput, CrossSectionInput, LevelCurvesInput, TangentPlaneInput } from '@/components/Graph3D';
 import { validateCurveExpression } from '@/lib/graphing/spaceCurve';
 import { validateImplicitExpression } from '@/lib/graphing/implicitSurface';
 import { validateVectorFieldExpression } from '@/lib/graphing/vectorField';
@@ -606,6 +606,18 @@ function Graph3DPage() {
   const [levelCurvesEnabled, setLevelCurvesEnabled] = useState(false);
   const [levelCurvesCount, setLevelCurvesCount] = useState(8);
   const [levelCurvesShowProjected, setLevelCurvesShowProjected] = useState(false);
+
+  // Tangent plane state
+  const [tangentPlaneEnabled, setTangentPlaneEnabled] = useState(false);
+  const [tangentPlaneShowNormal, setTangentPlaneShowNormal] = useState(true);
+  const [tangentPlaneShowGradient, setTangentPlaneShowGradient] = useState(true);
+  const [tangentPlaneInfo, setTangentPlaneInfo] = useState<{
+    point: { x: number; y: number; z: number };
+    dzdx: number;
+    dzdy: number;
+    planeEquation: string;
+    gradientMagnitude: number;
+  } | null>(null);
 
   // Animation state
   const [animationTime, setAnimationTime] = useState(0);
@@ -2507,6 +2519,69 @@ function Graph3DPage() {
                     </label>
                   </div>
                 )}
+
+                {/* Tangent Plane */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tangentPlaneEnabled}
+                    onChange={(e) => {
+                      setTangentPlaneEnabled(e.target.checked);
+                      if (!e.target.checked) setTangentPlaneInfo(null);
+                    }}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-slate-300">Tangent plane</span>
+                  {tangentPlaneEnabled && (
+                    <span className="text-[10px] text-yellow-400/60 ml-auto">click surface</span>
+                  )}
+                </label>
+
+                {tangentPlaneEnabled && (
+                  <div className="pl-6 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tangentPlaneShowNormal}
+                        onChange={(e) => setTangentPlaneShowNormal(e.target.checked)}
+                        className="w-3 h-3 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
+                      />
+                      <span className="text-xs text-slate-400">Normal vector <span className="text-cyan-400">n</span></span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tangentPlaneShowGradient}
+                        onChange={(e) => setTangentPlaneShowGradient(e.target.checked)}
+                        className="w-3 h-3 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500 focus:ring-offset-0"
+                      />
+                      <span className="text-xs text-slate-400">Gradient vector <span className="text-orange-400">{'\u2207'}f</span></span>
+                    </label>
+
+                    {/* Tangent plane info display */}
+                    {tangentPlaneInfo && (
+                      <div className="mt-2 p-2 bg-slate-800/50 rounded-lg border border-yellow-600/20 space-y-1.5">
+                        <div className="text-[10px] text-yellow-400/70 uppercase tracking-wide font-medium">Tangent Plane at Point</div>
+                        <div className="text-xs text-slate-300 font-mono">
+                          ({tangentPlaneInfo.point.x.toFixed(3)}, {tangentPlaneInfo.point.y.toFixed(3)}, {tangentPlaneInfo.point.z.toFixed(3)})
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">Equation:</div>
+                        <div className="text-xs text-yellow-300 font-mono">{tangentPlaneInfo.planeEquation}</div>
+                        <div className="text-[10px] text-slate-500 mt-1">Partial Derivatives:</div>
+                        <div className="text-xs text-slate-300 font-mono">
+                          <span className="text-slate-500">{'\u2202'}z/{'\u2202'}x = </span>{tangentPlaneInfo.dzdx.toFixed(4)}
+                        </div>
+                        <div className="text-xs text-slate-300 font-mono">
+                          <span className="text-slate-500">{'\u2202'}z/{'\u2202'}y = </span>{tangentPlaneInfo.dzdy.toFixed(4)}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">Gradient Magnitude:</div>
+                        <div className="text-xs text-orange-300 font-mono">
+                          |{'\u2207'}f| = {tangentPlaneInfo.gradientMagnitude.toFixed(4)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
               )}
             </div>
@@ -2617,9 +2692,15 @@ function Graph3DPage() {
                 numLevels: levelCurvesCount,
                 showProjected: levelCurvesShowProjected,
               } : undefined}
+              tangentPlane={graphMode === 'explicit' && tangentPlaneEnabled ? {
+                enabled: true,
+                showNormal: tangentPlaneShowNormal,
+                showGradient: tangentPlaneShowGradient,
+              } : undefined}
               time={usesTime ? animationTime : undefined}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
+              onTangentPlaneInfo={setTangentPlaneInfo}
             />
           </div>
 

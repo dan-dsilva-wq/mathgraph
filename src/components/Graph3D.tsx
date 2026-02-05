@@ -11,6 +11,7 @@ import { generateSpaceCurve, SpaceCurveOptions } from '@/lib/graphing/spaceCurve
 import { generateImplicitSurface, ImplicitSurfaceOptions } from '@/lib/graphing/implicitSurface';
 import { generateVectorField, createVectorFieldMeshes, VectorFieldOptions } from '@/lib/graphing/vectorField';
 import { generateCrossSection, generateLevelCurves, SlicePlane, CrossSectionOptions, LevelCurvesOptions } from '@/lib/graphing/crossSection';
+import { generateTangentPlane, TangentPlaneResult } from '@/lib/graphing/tangentPlane';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -73,6 +74,12 @@ export interface LevelCurvesInput {
   showProjected: boolean;  // Show contours projected onto grid plane
 }
 
+export interface TangentPlaneInput {
+  enabled: boolean;
+  showNormal: boolean;    // Show normal vector
+  showGradient: boolean;  // Show gradient vector (steepest ascent)
+}
+
 interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
@@ -88,6 +95,7 @@ interface Graph3DProps {
   vectorFields?: VectorFieldInput[]; // Vector fields F(x,y,z) = <P,Q,R>
   crossSection?: CrossSectionInput;  // Cross-section cutting plane
   levelCurves?: LevelCurvesInput;    // Level curves (contour lines)
+  tangentPlane?: TangentPlaneInput;  // Tangent plane at clicked point
   time?: number; // Time parameter for animated surfaces
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
@@ -96,6 +104,13 @@ interface Graph3DProps {
     globalMin: { x: number; y: number; z: number } | null;
     globalMax: { x: number; y: number; z: number } | null;
   }) => void;
+  onTangentPlaneInfo?: (info: {
+    point: { x: number; y: number; z: number };
+    dzdx: number;
+    dzdy: number;
+    planeEquation: string;
+    gradientMagnitude: number;
+  } | null) => void;
 }
 
 export default function Graph3D({
@@ -113,9 +128,11 @@ export default function Graph3D({
   vectorFields = [],
   crossSection,
   levelCurves,
+  tangentPlane,
   time,
   onZRangeChange,
   onStatsChange,
+  onTangentPlaneInfo,
 }: Graph3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -134,6 +151,8 @@ export default function Graph3D({
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
   const volumeVisualizationRef = useRef<THREE.Group | null>(null);
   const crossSectionGroupRef = useRef<THREE.Group | null>(null);
+  const tangentPlaneGroupRef = useRef<THREE.Group | null>(null);
+  const [tangentPoint, setTangentPoint] = useState<{ x: number; y: number } | null>(null);
   // Store transform for converting hover coords back to math coords
   const transformRef = useRef<{
     xScale: number;
@@ -343,12 +362,54 @@ export default function Graph3D({
       setHoverPoint(null);
     };
 
+    // Handle click for tangent plane placement
+    let mouseDownPos = { x: 0, y: 0 };
+    const handleMouseDown = (event: MouseEvent) => {
+      mouseDownPos = { x: event.clientX, y: event.clientY };
+    };
+    const handleClick = (event: MouseEvent) => {
+      // Only count as click if mouse didn't move much (not a drag)
+      const dx = event.clientX - mouseDownPos.x;
+      const dy = event.clientY - mouseDownPos.y;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+
+      if (!containerRef.current || !raycasterRef.current || !cameraRef.current || !surfaceGroupRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+
+      raycasterRef.current.setFromCamera(mouse, cameraRef.current);
+
+      const meshes: THREE.Mesh[] = [];
+      surfaceGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) meshes.push(obj);
+      });
+
+      const intersects = raycasterRef.current.intersectObjects(meshes);
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
+        const t = transformRef.current;
+        if (t) {
+          const mathX = (point.x / t.xScale) + t.xOffset;
+          const mathY = (point.z / t.yScale) + t.yOffset;
+          setTangentPoint({ x: mathX, y: mathY });
+        }
+      }
+    };
+
+    container.addEventListener('mousedown', handleMouseDown);
+    container.addEventListener('click', handleClick);
     container.addEventListener('mousemove', handleMouseMove);
     container.addEventListener('mouseleave', handleMouseLeave);
 
     // Cleanup
     return () => {
       window.removeEventListener('resize', handleResize);
+      container.removeEventListener('mousedown', handleMouseDown);
+      container.removeEventListener('click', handleClick);
       container.removeEventListener('mousemove', handleMouseMove);
       container.removeEventListener('mouseleave', handleMouseLeave);
       if (animationIdRef.current) {
@@ -1171,6 +1232,190 @@ export default function Graph3D({
     }
   }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, vectorFields, crossSection, levelCurves, time, onZRangeChange, onStatsChange]);
 
+  // Render tangent plane when a point is clicked
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    // Clean up old tangent plane group
+    if (tangentPlaneGroupRef.current) {
+      sceneRef.current.remove(tangentPlaneGroupRef.current);
+      tangentPlaneGroupRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.LineSegments) {
+          (obj as THREE.Mesh).geometry.dispose();
+          if ((obj as THREE.Mesh).material instanceof THREE.Material) {
+            ((obj as THREE.Mesh).material as THREE.Material).dispose();
+          }
+        }
+        if (obj instanceof THREE.Sprite) {
+          if (obj.material.map) obj.material.map.dispose();
+          obj.material.dispose();
+        }
+      });
+      tangentPlaneGroupRef.current = null;
+    }
+
+    if (!tangentPlane?.enabled || !tangentPoint) {
+      if (onTangentPlaneInfo) onTangentPlaneInfo(null);
+      return;
+    }
+
+    const validExpressions = expressions.filter(e => e.expression.trim());
+    if (validExpressions.length === 0) return;
+
+    const firstExpr = validExpressions[0].expression;
+    const effectiveZRange: [number, number] = zRange || [-5, 5];
+
+    try {
+      const result = generateTangentPlane({
+        expression: firstExpr,
+        pointX: tangentPoint.x,
+        pointY: tangentPoint.y,
+        xRange,
+        yRange,
+        zRange: effectiveZRange,
+        planeSize: Math.max(
+          Math.abs(xRange[1] - xRange[0]),
+          Math.abs(yRange[1] - yRange[0])
+        ) * 0.3,
+        time,
+      });
+
+      if (!result) return;
+
+      const tpGroup = new THREE.Group();
+
+      // Tangent plane (semi-transparent golden yellow)
+      const planeMat = new THREE.MeshBasicMaterial({
+        color: 0xffcc44,
+        transparent: true,
+        opacity: 0.25,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const planeMesh = new THREE.Mesh(result.planeGeometry, planeMat);
+      planeMesh.renderOrder = 2;
+      tpGroup.add(planeMesh);
+
+      // Plane border
+      const edges = new THREE.EdgesGeometry(result.planeGeometry);
+      const edgeMat = new THREE.LineBasicMaterial({
+        color: 0xffcc44,
+        opacity: 0.6,
+        transparent: true,
+      });
+      tpGroup.add(new THREE.LineSegments(edges, edgeMat));
+
+      // Point marker (bright white sphere)
+      const pointMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const pointMesh = new THREE.Mesh(result.pointGeometry, pointMat);
+      // Position the sphere at the point
+      const targetVisualSize = 10;
+      const xSpan = xRange[1] - xRange[0];
+      const ySpan = yRange[1] - yRange[0];
+      const zSpan = effectiveZRange[1] - effectiveZRange[0];
+      const xScl = xSpan > 0 ? targetVisualSize / xSpan : 1;
+      const yScl = ySpan > 0 ? targetVisualSize / ySpan : 1;
+      const zScl = zSpan > 0 ? targetVisualSize / zSpan : 1;
+      const xOff = (xRange[0] + xRange[1]) / 2;
+      const yOff = (yRange[0] + yRange[1]) / 2;
+      const zOff = (effectiveZRange[0] + effectiveZRange[1]) / 2;
+      pointMesh.position.set(
+        (result.point.x - xOff) * xScl,
+        (result.point.z - zOff) * zScl,
+        (result.point.y - yOff) * yScl,
+      );
+      pointMesh.renderOrder = 10;
+      tpGroup.add(pointMesh);
+
+      // Normal vector (cyan line)
+      if (tangentPlane.showNormal) {
+        const normalMat = new THREE.LineBasicMaterial({
+          color: 0x00ffff,
+          linewidth: 2,
+        });
+        const normalLine = new THREE.Line(result.normalLineGeometry, normalMat);
+        normalLine.renderOrder = 6;
+        tpGroup.add(normalLine);
+
+        // "n" label at the end of the normal
+        const normalLabel = createSmallLabel('n', '#00ffff');
+        const normalPositions = result.normalLineGeometry.getAttribute('position');
+        if (normalPositions && normalPositions.count >= 2) {
+          normalLabel.position.set(
+            normalPositions.getX(1),
+            normalPositions.getY(1) + 0.3,
+            normalPositions.getZ(1),
+          );
+          tpGroup.add(normalLabel);
+        }
+      }
+
+      // Gradient vector (orange arrow)
+      if (tangentPlane.showGradient && result.gradient.magnitude > 1e-8) {
+        const gradMat = new THREE.LineBasicMaterial({
+          color: 0xff6600,
+          linewidth: 2,
+        });
+        const gradLine = new THREE.LineSegments(result.gradientLineGeometry, gradMat);
+        gradLine.renderOrder = 6;
+        tpGroup.add(gradLine);
+
+        // "∇f" label at the end of the gradient
+        const gradLabel = createSmallLabel('\u2207f', '#ff6600');
+        const gradPositions = result.gradientLineGeometry.getAttribute('position');
+        if (gradPositions && gradPositions.count >= 2) {
+          gradLabel.position.set(
+            gradPositions.getX(1),
+            gradPositions.getY(1) + 0.3,
+            gradPositions.getZ(1),
+          );
+          tpGroup.add(gradLabel);
+        }
+      }
+
+      sceneRef.current.add(tpGroup);
+      tangentPlaneGroupRef.current = tpGroup;
+
+      // Report info to parent
+      if (onTangentPlaneInfo) {
+        onTangentPlaneInfo({
+          point: result.point,
+          dzdx: result.dzdx,
+          dzdy: result.dzdy,
+          planeEquation: result.planeEquation,
+          gradientMagnitude: result.gradient.magnitude,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to generate tangent plane:', err);
+    }
+  }, [tangentPlane, tangentPoint, expressions, xRange, yRange, zRange, time, onTangentPlaneInfo]);
+
+  // Helper to create small text labels for normal/gradient vectors
+  function createSmallLabel(text: string, color: string): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    const size = 64;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'transparent';
+    ctx.fillRect(0, 0, size, size);
+    ctx.font = 'bold 40px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.fillText(text, size / 2, size / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.6, 0.6, 1);
+    return sprite;
+  }
+
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
@@ -1208,6 +1453,9 @@ export default function Graph3D({
           <div><span className="text-red-400">x:</span> {hoverPoint.x.toFixed(3)}</div>
           <div><span className="text-blue-400">y:</span> {hoverPoint.y.toFixed(3)}</div>
           <div><span className="text-green-400">z:</span> {hoverPoint.z.toFixed(3)}</div>
+          {tangentPlane?.enabled && (
+            <div className="text-yellow-400/70 text-[9px] mt-1 border-t border-white/10 pt-1">Click to place tangent plane</div>
+          )}
         </div>
       )}
       <div className="absolute bottom-2 md:bottom-4 left-2 md:left-4 flex items-center gap-1 md:gap-2">
