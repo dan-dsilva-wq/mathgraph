@@ -12,6 +12,7 @@ import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInpu
 import { validateCurveExpression } from '@/lib/graphing/spaceCurve';
 import { validateImplicitExpression } from '@/lib/graphing/implicitSurface';
 import { validateVectorFieldExpression } from '@/lib/graphing/vectorField';
+import { analyzeSurface, computeHessianAtPoint, computeCurvatureAtPoint, type SurfaceAnalysisResult, type ClassifiedCriticalPoint } from '@/lib/graphing/surfaceAnalysis';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -66,6 +67,54 @@ function CollapsibleSection({
           {children}
         </div>
       )}
+    </div>
+  );
+}
+
+// Critical point analysis card
+function CriticalPointCard({ point }: { point: ClassifiedCriticalPoint }) {
+  const typeLabels: Record<string, { label: string; color: string; bg: string }> = {
+    local_min: { label: 'Local Minimum', color: 'text-red-400', bg: 'bg-red-600/20 border-red-500/30' },
+    local_max: { label: 'Local Maximum', color: 'text-green-400', bg: 'bg-green-600/20 border-green-500/30' },
+    saddle: { label: 'Saddle Point', color: 'text-yellow-400', bg: 'bg-yellow-600/20 border-yellow-500/30' },
+    degenerate: { label: 'Degenerate', color: 'text-slate-400', bg: 'bg-slate-600/20 border-slate-500/30' },
+  };
+
+  const info = typeLabels[point.type] || typeLabels.degenerate;
+
+  const fmtN = (n: number): string => {
+    if (Math.abs(n) < 1e-10) return '0';
+    if (Math.abs(n) >= 1000 || (Math.abs(n) < 0.001 && n !== 0)) return n.toExponential(2);
+    return n.toFixed(4).replace(/\.?0+$/, '');
+  };
+
+  return (
+    <div className={`p-2 rounded-lg border ${info.bg} space-y-1`}>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-medium ${info.color}`}>{info.label}</span>
+        <span className="text-[10px] text-slate-400 font-mono">
+          ({fmtN(point.x)}, {fmtN(point.y)}, {fmtN(point.z)})
+        </span>
+      </div>
+
+      {/* Hessian Matrix */}
+      <div className="text-[10px] text-slate-500 mt-1">Hessian matrix:</div>
+      <div className="overflow-x-auto custom-scrollbar">
+        <InlineMath math={`H = \\begin{bmatrix} ${fmtN(point.hessian.fxx)} & ${fmtN(point.hessian.fxy)} \\\\ ${fmtN(point.hessian.fxy)} & ${fmtN(point.hessian.fyy)} \\end{bmatrix}`} />
+      </div>
+
+      {/* Key values */}
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+        <div className="text-slate-500">det(H) = <span className={`font-mono ${point.hessian.determinant > 0 ? 'text-green-400' : point.hessian.determinant < 0 ? 'text-red-400' : 'text-slate-400'}`}>{fmtN(point.hessian.determinant)}</span></div>
+        <div className="text-slate-500">tr(H) = <span className="font-mono text-slate-300">{fmtN(point.hessian.trace)}</span></div>
+        <div className="text-slate-500">K = <span className="font-mono text-slate-300">{fmtN(point.gaussianCurvature)}</span></div>
+        <div className="text-slate-500">H = <span className="font-mono text-slate-300">{fmtN(point.meanCurvature)}</span></div>
+      </div>
+
+      {/* Eigenvalues */}
+      <div className="text-[10px] text-slate-500">
+        eigenvalues: <span className="font-mono text-slate-300">{fmtN(point.eigenvalues[0])}, {fmtN(point.eigenvalues[1])}</span>
+      </div>
     </div>
   );
 }
@@ -619,6 +668,11 @@ function Graph3DPage() {
     gradientMagnitude: number;
   } | null>(null);
 
+  // Surface analysis state
+  const [surfaceAnalysis, setSurfaceAnalysis] = useState<SurfaceAnalysisResult | null>(null);
+  const [analysisEnabled, setAnalysisEnabled] = useState(false);
+  const analysisDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
   // Animation state
   const [animationTime, setAnimationTime] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -1087,6 +1141,30 @@ function Graph3DPage() {
       }
     };
   }, [graphMode, vfPExpr, vfQExpr, vfRExpr, vfXRange, vfYRange, vfZRange, vfDensity, vfNormalize, vfIs2D]);
+
+  // Run surface analysis when enabled and expression changes
+  useEffect(() => {
+    if (!analysisEnabled || graphMode !== 'explicit' || activeExpressions.length === 0) {
+      setSurfaceAnalysis(null);
+      return;
+    }
+
+    if (analysisDebounceRef.current) {
+      clearTimeout(analysisDebounceRef.current);
+    }
+
+    analysisDebounceRef.current = setTimeout(() => {
+      const expr = activeExpressions[0].expression;
+      const result = analyzeSurface(expr, xRange, yRange);
+      setSurfaceAnalysis(result);
+    }, 500);
+
+    return () => {
+      if (analysisDebounceRef.current) {
+        clearTimeout(analysisDebounceRef.current);
+      }
+    };
+  }, [analysisEnabled, graphMode, activeExpressions, xRange, yRange]);
 
   const loadVectorFieldExample = (example: VectorFieldExample) => {
     setVfPExpr(example.p);
@@ -1985,6 +2063,53 @@ function Graph3DPage() {
                 </div>
               </CollapsibleSection>
 
+              {/* Surface Analysis Section */}
+              <CollapsibleSection
+                title="Surface Analysis"
+                icon={<span className="text-xs">🔬</span>}
+                badge={
+                  surfaceAnalysis?.criticalPoints.length ? (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-indigo-600 rounded text-white">
+                      {surfaceAnalysis.criticalPoints.length} pts
+                    </span>
+                  ) : null
+                }
+              >
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={analysisEnabled}
+                      onChange={(e) => setAnalysisEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                    />
+                    <span className="text-xs text-slate-300">Enable analysis</span>
+                  </label>
+
+                  {analysisEnabled && surfaceAnalysis?.success && (
+                    <div className="space-y-3">
+                      {/* Critical Points */}
+                      {surfaceAnalysis.criticalPoints.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Critical Points (Second Derivative Test)</div>
+                          {surfaceAnalysis.criticalPoints.map((pt, idx) => (
+                            <CriticalPointCard key={idx} point={pt} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500">No critical points found in the current domain</div>
+                      )}
+                    </div>
+                  )}
+                  {analysisEnabled && surfaceAnalysis && !surfaceAnalysis.success && (
+                    <div className="text-xs text-red-400">{surfaceAnalysis.error || 'Analysis failed'}</div>
+                  )}
+                  {analysisEnabled && !surfaceAnalysis && (
+                    <div className="text-xs text-slate-500">Computing...</div>
+                  )}
+                </div>
+              </CollapsibleSection>
+
               {/* Surface Area Section */}
               <CollapsibleSection
                 title="Surface Area"
@@ -2578,6 +2703,32 @@ function Graph3DPage() {
                         <div className="text-xs text-orange-300 font-mono">
                           |{'\u2207'}f| = {tangentPlaneInfo.gradientMagnitude.toFixed(4)}
                         </div>
+
+                        {/* Curvature at this point */}
+                        {activeExpressions.length > 0 && (() => {
+                          const expr = activeExpressions[0].expression;
+                          const hess = computeHessianAtPoint(expr, tangentPlaneInfo.point.x, tangentPlaneInfo.point.y);
+                          const curv = computeCurvatureAtPoint(expr, tangentPlaneInfo.point.x, tangentPlaneInfo.point.y);
+                          if (!hess || !curv) return null;
+                          const det = hess.determinant;
+                          const fmtN = (n: number): string => {
+                            if (Math.abs(n) < 1e-10) return '0';
+                            return n.toFixed(4).replace(/\.?0+$/, '');
+                          };
+                          const classification = det > 1e-8 ? (hess.fxx > 0 ? 'Concave up (elliptic)' : 'Concave down (elliptic)')
+                            : det < -1e-8 ? 'Saddle region (hyperbolic)'
+                            : 'Parabolic';
+                          return (
+                            <>
+                              <div className="text-[10px] text-slate-500 mt-1">Curvature:</div>
+                              <div className="text-[10px] text-slate-400">
+                                K = <span className="font-mono text-slate-300">{fmtN(curv.gaussianCurvature)}</span>
+                                {' '} H = <span className="font-mono text-slate-300">{fmtN(curv.meanCurvature)}</span>
+                              </div>
+                              <div className="text-[10px] text-indigo-300">{classification}</div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

@@ -578,6 +578,125 @@ export default function Graph3D({
     zLabel.position.set(0, 0, axisLength + labelOffset);
     helpersGroup.add(zLabel);
 
+    // Add axis tick marks with numeric labels
+    const createTickLabel = (text: string, color: string): THREE.Sprite => {
+      const canvas = document.createElement('canvas');
+      const size = 128;
+      canvas.width = size;
+      canvas.height = size / 2;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, size, size / 2);
+      ctx.font = '32px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = color;
+      ctx.fillText(text, size / 2, size / 4);
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+      });
+      const sprite = new THREE.Sprite(material);
+      const tickLabelScale = visualSize * 0.055;
+      sprite.scale.set(tickLabelScale, tickLabelScale / 2, 1);
+      return sprite;
+    };
+
+    // Compute nice tick intervals for an axis
+    const computeTickInterval = (range: [number, number]): number => {
+      const span = range[1] - range[0];
+      const rawStep = span / 5; // Aim for ~5 ticks
+      const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+      const normalized = rawStep / magnitude;
+      let niceStep: number;
+      if (normalized < 1.5) niceStep = 1;
+      else if (normalized < 3.5) niceStep = 2;
+      else if (normalized < 7.5) niceStep = 5;
+      else niceStep = 10;
+      return niceStep * magnitude;
+    };
+
+    const formatTick = (val: number): string => {
+      if (Math.abs(val) < 1e-10) return '0';
+      if (Math.abs(val) >= 100 || (Math.abs(val) < 0.01 && val !== 0)) return val.toExponential(0);
+      // Remove trailing zeros
+      const s = val.toFixed(2);
+      return s.replace(/\.?0+$/, '');
+    };
+
+    const t = transformRef.current;
+    if (t) {
+      const tickSize = visualSize * 0.012; // Small tick mark length
+
+      // X-axis ticks (math X -> Three.js X)
+      const xTickStep = computeTickInterval(xRange);
+      const xStart = Math.ceil(xRange[0] / xTickStep) * xTickStep;
+      for (let val = xStart; val <= xRange[1] + xTickStep * 0.01; val += xTickStep) {
+        if (Math.abs(val) < xTickStep * 0.01) continue; // Skip 0 (origin)
+        const pos = (val - t.xOffset) * t.xScale;
+        if (Math.abs(pos) > axisLength) continue;
+
+        // Tick mark
+        const tickGeom = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(pos, -tickSize, 0),
+          new THREE.Vector3(pos, tickSize, 0),
+        ]);
+        const tick = new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: 0xff6666, opacity: 0.5, transparent: true }));
+        helpersGroup.add(tick);
+
+        // Number label
+        const tickLabel = createTickLabel(formatTick(val), '#ff666699');
+        tickLabel.position.set(pos, -tickSize * 4, 0);
+        helpersGroup.add(tickLabel);
+      }
+
+      // Y-axis ticks (math Y -> Three.js Z)
+      const yTickStep = computeTickInterval(yRange);
+      const yStart = Math.ceil(yRange[0] / yTickStep) * yTickStep;
+      for (let val = yStart; val <= yRange[1] + yTickStep * 0.01; val += yTickStep) {
+        if (Math.abs(val) < yTickStep * 0.01) continue;
+        const pos = (val - t.yOffset) * t.yScale;
+        if (Math.abs(pos) > axisLength) continue;
+
+        const tickGeom = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, -tickSize, pos),
+          new THREE.Vector3(0, tickSize, pos),
+        ]);
+        const tick = new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: 0x6666ff, opacity: 0.5, transparent: true }));
+        helpersGroup.add(tick);
+
+        const tickLabel = createTickLabel(formatTick(val), '#6666ff99');
+        tickLabel.position.set(-tickSize * 4, 0, pos);
+        helpersGroup.add(tickLabel);
+      }
+
+      // Z-axis ticks (math Z -> Three.js Y)
+      const effectiveZRange: [number, number] = [
+        t.zOffset - (visualSize / 2) / t.zScale,
+        t.zOffset + (visualSize / 2) / t.zScale,
+      ];
+      const zTickStep = computeTickInterval(effectiveZRange);
+      const zStart = Math.ceil(effectiveZRange[0] / zTickStep) * zTickStep;
+      for (let val = zStart; val <= effectiveZRange[1] + zTickStep * 0.01; val += zTickStep) {
+        if (Math.abs(val) < zTickStep * 0.01) continue;
+        const pos = (val - t.zOffset) * t.zScale;
+        if (Math.abs(pos) > axisLength) continue;
+
+        const tickGeom = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(-tickSize, pos, 0),
+          new THREE.Vector3(tickSize, pos, 0),
+        ]);
+        const tick = new THREE.Line(tickGeom, new THREE.LineBasicMaterial({ color: 0x66ff66, opacity: 0.5, transparent: true }));
+        helpersGroup.add(tick);
+
+        const tickLabel = createTickLabel(formatTick(val), '#66ff6699');
+        tickLabel.position.set(tickSize * 4, pos, 0);
+        helpersGroup.add(tickLabel);
+      }
+    }
+
     sceneRef.current.add(helpersGroup);
     helpersGroupRef.current = helpersGroup;
   }, [xRange, yRange, zeroPlaneY]);
@@ -1099,10 +1218,7 @@ export default function Graph3D({
       surfaceGroupRef.current = surfaceGroup;
 
       // Add critical points markers with labels
-      const xSpan = Math.abs(xRange[1] - xRange[0]);
-      const ySpan = Math.abs(yRange[1] - yRange[0]);
-      const maxSpan = Math.max(xSpan, ySpan);
-      const markerSize = maxSpan * 0.025;
+      const markerSize = 0.15; // Fixed size in visual coordinates
 
       // Helper to create coordinate label
       const createCoordLabel = (point: CriticalPoint): THREE.Sprite => {
@@ -1112,7 +1228,10 @@ export default function Graph3D({
         canvas.height = size / 2;
         const ctx = canvas.getContext('2d')!;
 
-        ctx.fillStyle = point.type === 'maximum' ? 'rgba(0, 200, 0, 0.9)' : 'rgba(255, 50, 50, 0.9)';
+        const bgColor = point.type === 'maximum' ? 'rgba(0, 200, 0, 0.9)'
+          : point.type === 'saddle' ? 'rgba(200, 150, 0, 0.9)'
+          : 'rgba(255, 50, 50, 0.9)';
+        ctx.fillStyle = bgColor;
         ctx.beginPath();
         ctx.roundRect(0, 0, size, size / 2, 8);
         ctx.fill();
@@ -1121,7 +1240,7 @@ export default function Graph3D({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'white';
-        const label = point.type === 'maximum' ? 'MAX' : 'MIN';
+        const label = point.type === 'maximum' ? 'MAX' : point.type === 'saddle' ? 'SADDLE' : 'MIN';
         ctx.fillText(label, size / 2, size / 6);
 
         ctx.font = '18px monospace';
@@ -1136,7 +1255,9 @@ export default function Graph3D({
       allCriticalPoints.forEach((point) => {
         // Sphere marker
         const sphereGeom = new THREE.SphereGeometry(markerSize, 16, 16);
-        const color = point.type === 'maximum' ? 0x00cc00 : 0xff3333;
+        const color = point.type === 'maximum' ? 0x00cc00
+          : point.type === 'saddle' ? 0xcc9900
+          : 0xff3333;
         const sphereMat = new THREE.MeshBasicMaterial({ color });
         const sphere = new THREE.Mesh(sphereGeom, sphereMat);
         sphere.position.set(point.scaledX, point.scaledZ, point.scaledY);
