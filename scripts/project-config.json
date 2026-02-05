@@ -19,8 +19,8 @@
   },
   "safety": {
     "maxFilesPerTask": 10,
-    "maxConsecutiveFailures": 3,
-    "maxConsecutiveNoOps": 3,
+    "maxConsecutiveFailures": 5,
+    "maxConsecutiveNoOps": 5,
     "blockedPatterns": [
       "\\.env", "package-lock\\.json", "yarn\\.lock",
       "pnpm-lock\\.yaml", "node_modules/",
