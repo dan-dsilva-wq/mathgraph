@@ -738,14 +738,26 @@ GO. Use the Edit tool NOW.
             } -ArgumentList $fixerPrompt
 
             $fixerStartTime = Get-Date
+            $fixerTimeout = 600  # 10 minutes max for fixer
+            $timedOut = $false
             while ($job.State -eq 'Running') {
                 $elapsed = [math]::Round(((Get-Date) - $fixerStartTime).TotalSeconds)
+                if ($elapsed -gt $fixerTimeout) {
+                    Write-Log "  Fixer timed out after ${fixerTimeout}s - killing" "Yellow"
+                    Stop-Job -Job $job
+                    $timedOut = $true
+                    break
+                }
                 Write-Spinner "Fixer working... (${elapsed}s)"
                 Start-Sleep -Milliseconds 500
             }
 
             $rawOutput = Receive-Job -Job $job
             Remove-Job -Job $job
+            if ($timedOut) {
+                Invoke-Revert
+                continue
+            }
             $fixerOutput = if ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
 
             $elapsed = [math]::Round(((Get-Date) - $fixerStartTime).TotalSeconds)
@@ -840,14 +852,26 @@ GO.
                 claude --dangerously-skip-permissions --print $p 2>&1
             } -ArgumentList $fixPrompt
 
+            $subTimeout = 600  # 10 minutes max for sub-loop
+            $timedOut = $false
             while ($job.State -eq 'Running') {
                 $elapsed = [math]::Round(((Get-Date) - $subStartTime).TotalSeconds)
+                if ($elapsed -gt $subTimeout) {
+                    Write-Log "  Sub-loop $loopLabel timed out after ${subTimeout}s - killing" "Yellow"
+                    Stop-Job -Job $job
+                    $timedOut = $true
+                    break
+                }
                 Write-Spinner "Sub-loop $loopLabel working... (${elapsed}s)"
                 Start-Sleep -Milliseconds 500
             }
 
             $rawOutput = Receive-Job -Job $job
             Remove-Job -Job $job
+            if ($timedOut) {
+                Invoke-Revert
+                continue
+            }
             $fixOutput = if ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
 
             $elapsed = [math]::Round(((Get-Date) - $subStartTime).TotalSeconds)
@@ -1976,14 +2000,28 @@ function Start-OvernightExperiment {
                         claude --dangerously-skip-permissions --print $p 2>&1
                     } -ArgumentList $prompt
 
+                    $mainTimeout = 2400  # 40 minutes max for main loop
+                    $timedOut = $false
                     while ($job.State -eq 'Running') {
                         $elapsed = [math]::Round(((Get-Date) - $aiStartTime).TotalSeconds)
+                        if ($elapsed -gt $mainTimeout) {
+                            Write-Log "Main loop timed out after ${mainTimeout}s - killing" "Yellow"
+                            Stop-Job -Job $job
+                            $timedOut = $true
+                            break
+                        }
                         Write-Spinner "Claude working... (${elapsed}s)"
                         Start-Sleep -Milliseconds 500
                     }
 
                     $rawOutput = Receive-Job -Job $job
                     Remove-Job -Job $job
+                    if ($timedOut) {
+                        Invoke-Revert
+                        $claudeOutput = "TIMED OUT after ${mainTimeout}s"
+                        $success = $false
+                        break
+                    }
                     $claudeOutput = if ($rawOutput -is [array]) { $rawOutput -join "`n" } else { "$rawOutput" }
                     if (-not $claudeOutput) { $claudeOutput = "" }
                     $elapsed = [math]::Round(((Get-Date) - $aiStartTime).TotalSeconds)
