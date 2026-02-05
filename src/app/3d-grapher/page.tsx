@@ -8,9 +8,10 @@ import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives, expressionUsesTime, parametricExpressionUsesTime } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import { validateParametricExpression } from '@/lib/mathParser';
-import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput } from '@/components/Graph3D';
+import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInput } from '@/components/Graph3D';
 import { validateCurveExpression } from '@/lib/graphing/spaceCurve';
 import { validateImplicitExpression } from '@/lib/graphing/implicitSurface';
+import { validateVectorFieldExpression } from '@/lib/graphing/vectorField';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -76,7 +77,7 @@ const HISTORY_KEY = 'mathgraph-recent-equations';
 const CURRENT_EXPR_KEY = 'mathgraph-current-expressions';
 const CURRENT_RANGES_KEY = 'mathgraph-current-ranges';
 
-type GraphMode = 'explicit' | 'parametric' | 'curve' | 'implicit';
+type GraphMode = 'explicit' | 'parametric' | 'curve' | 'implicit' | 'vector';
 
 interface ParametricExample {
   name: string;
@@ -416,6 +417,103 @@ const IMPLICIT_EXAMPLES: ImplicitExample[] = [
   },
 ];
 
+// Vector field examples
+interface VectorFieldExample {
+  name: string;
+  description: string;
+  p: string;
+  q: string;
+  r: string;
+  xRange: [number, number];
+  yRange: [number, number];
+  zRange: [number, number];
+  is2D?: boolean;
+}
+
+const VECTOR_FIELD_EXAMPLES: VectorFieldExample[] = [
+  {
+    name: 'Rotation',
+    description: 'Counterclockwise rotation field',
+    p: '-y',
+    q: 'x',
+    r: '0',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+    is2D: true,
+  },
+  {
+    name: 'Radial',
+    description: 'Radial outward field',
+    p: 'x',
+    q: 'y',
+    r: 'z',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Gravity',
+    description: 'Inverse-square gravitational field',
+    p: '-x / (x^2 + y^2 + z^2)^(3/2)',
+    q: '-y / (x^2 + y^2 + z^2)^(3/2)',
+    r: '-z / (x^2 + y^2 + z^2)^(3/2)',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Vortex',
+    description: 'Vortex around z-axis',
+    p: '-y / (x^2 + y^2)',
+    q: 'x / (x^2 + y^2)',
+    r: '0.5',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-2, 2],
+  },
+  {
+    name: 'Curl Field',
+    description: 'Field with non-zero curl',
+    p: '-z',
+    q: '0',
+    r: 'x',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Gradient',
+    description: 'Gradient of x^2 + y^2 + z^2',
+    p: '2x',
+    q: '2y',
+    r: '2z',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Dipole',
+    description: 'Magnetic dipole-like field',
+    p: '3x*z / (x^2 + y^2 + z^2)^(5/2)',
+    q: '3y*z / (x^2 + y^2 + z^2)^(5/2)',
+    r: '(3z^2 - (x^2 + y^2 + z^2)) / (x^2 + y^2 + z^2)^(5/2)',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Sink/Source',
+    description: 'Source at (1,0,0) and sink at (-1,0,0)',
+    p: '(x-1)/((x-1)^2+y^2+z^2)^(3/2) - (x+1)/((x+1)^2+y^2+z^2)^(3/2)',
+    q: 'y/((x-1)^2+y^2+z^2)^(3/2) - y/((x+1)^2+y^2+z^2)^(3/2)',
+    r: 'z/((x-1)^2+y^2+z^2)^(3/2) - z/((x+1)^2+y^2+z^2)^(3/2)',
+    xRange: [-4, 4],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+];
+
 interface HistoryEntry {
   expressions: string[];
   timestamp: number;
@@ -485,6 +583,18 @@ function Graph3DPage() {
   const [implicitYRange, setImplicitYRange] = useState<[number, number]>([-2, 2]);
   const [implicitZRange, setImplicitZRange] = useState<[number, number]>([-2, 2]);
   const [activeImplicits, setActiveImplicits] = useState<ImplicitSurfaceInput[]>([]);
+
+  // Vector field mode state
+  const [vfPExpr, setVfPExpr] = useState('-y');
+  const [vfQExpr, setVfQExpr] = useState('x');
+  const [vfRExpr, setVfRExpr] = useState('0');
+  const [vfXRange, setVfXRange] = useState<[number, number]>([-3, 3]);
+  const [vfYRange, setVfYRange] = useState<[number, number]>([-3, 3]);
+  const [vfZRange, setVfZRange] = useState<[number, number]>([-3, 3]);
+  const [vfDensity, setVfDensity] = useState(7);
+  const [vfNormalize, setVfNormalize] = useState(false);
+  const [vfIs2D, setVfIs2D] = useState(false);
+  const [activeVectorFields, setActiveVectorFields] = useState<VectorFieldInput[]>([]);
 
   // Animation state
   const [animationTime, setAnimationTime] = useState(0);
@@ -914,6 +1024,57 @@ function Graph3DPage() {
     };
   }, [graphMode, implicitExpr, implicitXRange, implicitYRange, implicitZRange]);
 
+  // Auto-update vector field when expressions change (debounced)
+  const vfDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (graphMode !== 'vector') {
+      setActiveVectorFields([]);
+      return;
+    }
+
+    if (vfDebounceRef.current) {
+      clearTimeout(vfDebounceRef.current);
+    }
+
+    vfDebounceRef.current = setTimeout(() => {
+      const pValid = vfPExpr.trim() && validateVectorFieldExpression(vfPExpr).valid;
+      const qValid = vfQExpr.trim() && validateVectorFieldExpression(vfQExpr).valid;
+      const rValid = vfRExpr.trim() && validateVectorFieldExpression(vfRExpr).valid;
+
+      if (pValid && qValid && rValid) {
+        setActiveVectorFields([{
+          pExpr: vfPExpr,
+          qExpr: vfQExpr,
+          rExpr: vfRExpr,
+          xRange: vfXRange,
+          yRange: vfYRange,
+          zRange: vfZRange,
+          density: vfDensity,
+          normalize: vfNormalize,
+          is2D: vfIs2D,
+        }]);
+      } else {
+        setActiveVectorFields([]);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (vfDebounceRef.current) {
+        clearTimeout(vfDebounceRef.current);
+      }
+    };
+  }, [graphMode, vfPExpr, vfQExpr, vfRExpr, vfXRange, vfYRange, vfZRange, vfDensity, vfNormalize, vfIs2D]);
+
+  const loadVectorFieldExample = (example: VectorFieldExample) => {
+    setVfPExpr(example.p);
+    setVfQExpr(example.q);
+    setVfRExpr(example.r);
+    setVfXRange(example.xRange);
+    setVfYRange(example.yRange);
+    setVfZRange(example.zRange);
+    setVfIs2D(example.is2D ?? false);
+  };
+
   const loadCurveExample = (example: CurveExample) => {
     setCurveXExpr(example.x);
     setCurveYExpr(example.y);
@@ -1098,6 +1259,16 @@ function Graph3DPage() {
                 }`}
               >
                 Implicit
+              </button>
+              <button
+                onClick={() => setGraphMode('vector')}
+                className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                  graphMode === 'vector'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Vector
               </button>
             </div>
           </div>
@@ -1573,6 +1744,167 @@ function Graph3DPage() {
                     key={example.name}
                     onClick={() => loadImplicitExample(example)}
                     className="px-2.5 py-1 text-xs bg-purple-900/40 hover:bg-purple-800/50 text-purple-300 rounded-md transition-colors border border-purple-700/40 hover:border-purple-600/50"
+                    title={example.description}
+                  >
+                    {example.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Vector Field mode */}
+          {graphMode === 'vector' && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+              Vector Field F = &lt;P, Q, R&gt;
+            </h3>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-red-400 text-xs font-mono w-10 text-right flex-shrink-0">P =</span>
+                <input
+                  type="text"
+                  value={vfPExpr}
+                  onChange={(e) => setVfPExpr(e.target.value)}
+                  placeholder="-y"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    vfPExpr.trim() && !validateVectorFieldExpression(vfPExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-blue-400 text-xs font-mono w-10 text-right flex-shrink-0">Q =</span>
+                <input
+                  type="text"
+                  value={vfQExpr}
+                  onChange={(e) => setVfQExpr(e.target.value)}
+                  placeholder="x"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    vfQExpr.trim() && !validateVectorFieldExpression(vfQExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 text-xs font-mono w-10 text-right flex-shrink-0">R =</span>
+                <input
+                  type="text"
+                  value={vfRExpr}
+                  onChange={(e) => setVfRExpr(e.target.value)}
+                  placeholder="0"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    vfRExpr.trim() && !validateVectorFieldExpression(vfRExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="text-[10px] text-slate-500">
+                F(x,y,z) = P(x,y,z)<span className="text-red-400">i</span> + Q(x,y,z)<span className="text-blue-400">j</span> + R(x,y,z)<span className="text-green-400">k</span>
+              </div>
+            </div>
+
+            {/* Bounds */}
+            <div className="mt-4 space-y-2">
+              <h4 className="text-xs text-slate-500">Bounds</h4>
+              {/* x range */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-red-400 font-mono w-4 text-right flex-shrink-0">x:</span>
+                <input type="text" inputMode="numeric"
+                  value={vfXRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfXRange([v, vfXRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={vfXRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfXRange([vfXRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              {/* y range */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-blue-400 font-mono w-4 text-right flex-shrink-0">y:</span>
+                <input type="text" inputMode="numeric"
+                  value={vfYRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfYRange([v, vfYRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={vfYRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfYRange([vfYRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              {/* z range */}
+              {!vfIs2D && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-400 font-mono w-4 text-right flex-shrink-0">z:</span>
+                <input type="text" inputMode="numeric"
+                  value={vfZRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfZRange([v, vfZRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={vfZRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setVfZRange([vfZRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              )}
+            </div>
+
+            {/* Options */}
+            <div className="mt-4 space-y-3">
+              <h4 className="text-xs text-slate-500">Options</h4>
+
+              {/* Density control */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 w-14 flex-shrink-0">Density:</span>
+                <input
+                  type="range"
+                  min="3"
+                  max="12"
+                  value={vfDensity}
+                  onChange={(e) => setVfDensity(parseInt(e.target.value))}
+                  className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <span className="text-xs text-slate-400 font-mono w-6 text-right">{vfDensity}</span>
+              </div>
+
+              {/* 2D / 3D toggle */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vfIs2D}
+                  onChange={(e) => setVfIs2D(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
+                />
+                <span className="text-sm text-slate-300">2D mode (z=0 plane only)</span>
+              </label>
+
+              {/* Normalize toggle */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vfNormalize}
+                  onChange={(e) => setVfNormalize(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
+                />
+                <span className="text-sm text-slate-300">Normalize arrows (uniform length)</span>
+              </label>
+            </div>
+
+            {/* Examples */}
+            <div className="mt-4">
+              <h4 className="text-xs text-slate-500 mb-2">Examples</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {VECTOR_FIELD_EXAMPLES.map((example) => (
+                  <button
+                    key={example.name}
+                    onClick={() => loadVectorFieldExample(example)}
+                    className="px-2.5 py-1 text-xs bg-amber-900/40 hover:bg-amber-800/50 text-amber-300 rounded-md transition-colors border border-amber-700/40 hover:border-amber-600/50"
                     title={example.description}
                   >
                     {example.name}
@@ -2117,6 +2449,10 @@ function Graph3DPage() {
               <p className="text-xs text-slate-500 mb-2">
                 Use <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400 text-[10px]">t</kbd> for animation. Try: sin(x - t) * cos(y). Also supports x^2, sin(x), cos(y), exp(-x^2)
               </p>
+            ) : graphMode === 'vector' ? (
+              <p className="text-xs text-slate-500 mb-2">
+                Define P, Q, R components of a 3D vector field. Color = magnitude. Supports x, y, z variables.
+              </p>
             ) : (
               <p className="text-xs text-slate-500 mb-2">
                 Define x(u,v), y(u,v), z(u,v) for parametric surfaces. Use <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400 text-[10px]">t</kbd> for animation.
@@ -2143,6 +2479,7 @@ function Graph3DPage() {
               parametricSurfaces={graphMode === 'parametric' ? activeParametricSurfaces : []}
               spaceCurves={graphMode === 'curve' ? activeCurves : []}
               implicitSurfaces={graphMode === 'implicit' ? activeImplicits : []}
+              vectorFields={graphMode === 'vector' ? activeVectorFields : []}
               time={usesTime ? animationTime : undefined}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}

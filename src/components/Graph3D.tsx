@@ -9,6 +9,7 @@ import { generateClosedVolumeGeometry, SurfaceConstraint } from '@/lib/graphing/
 import { generateParametricSurface, ParametricSurfaceOptions } from '@/lib/graphing/parametricSurface';
 import { generateSpaceCurve, SpaceCurveOptions } from '@/lib/graphing/spaceCurve';
 import { generateImplicitSurface, ImplicitSurfaceOptions } from '@/lib/graphing/implicitSurface';
+import { generateVectorField, createVectorFieldMeshes, VectorFieldOptions } from '@/lib/graphing/vectorField';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -47,6 +48,18 @@ export interface ImplicitSurfaceInput {
   zRange: [number, number];
 }
 
+export interface VectorFieldInput {
+  pExpr: string;  // P(x,y,z) - x component
+  qExpr: string;  // Q(x,y,z) - y component
+  rExpr: string;  // R(x,y,z) - z component
+  xRange: [number, number];
+  yRange: [number, number];
+  zRange: [number, number];
+  density: number;
+  normalize: boolean;
+  is2D: boolean;
+}
+
 interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
@@ -59,6 +72,7 @@ interface Graph3DProps {
   parametricSurfaces?: ParametricInput[]; // Parametric surfaces to render
   spaceCurves?: SpaceCurveInput[]; // Space curves r(t) = <x(t), y(t), z(t)>
   implicitSurfaces?: ImplicitSurfaceInput[]; // Implicit surfaces F(x,y,z) = 0
+  vectorFields?: VectorFieldInput[]; // Vector fields F(x,y,z) = <P,Q,R>
   time?: number; // Time parameter for animated surfaces
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
@@ -81,6 +95,7 @@ export default function Graph3D({
   parametricSurfaces = [],
   spaceCurves = [],
   implicitSurfaces = [],
+  vectorFields = [],
   time,
   onZRangeChange,
   onStatsChange,
@@ -546,7 +561,7 @@ export default function Graph3D({
 
     // Filter valid expressions (they should already be filtered, but double-check)
     const validExpressions = expressions.filter(e => e.expression.trim());
-    if (validExpressions.length === 0 && parametricSurfaces.length === 0 && spaceCurves.length === 0 && implicitSurfaces.length === 0) return;
+    if (validExpressions.length === 0 && parametricSurfaces.length === 0 && spaceCurves.length === 0 && implicitSurfaces.length === 0 && vectorFields.length === 0) return;
 
     try {
       setError(null);
@@ -834,6 +849,28 @@ export default function Graph3D({
         }
       });
 
+      // Render vector fields
+      vectorFields.forEach((vf) => {
+        try {
+          const fieldResult = generateVectorField({
+            pExpr: vf.pExpr,
+            qExpr: vf.qExpr,
+            rExpr: vf.rExpr,
+            xRange: vf.xRange,
+            yRange: vf.yRange,
+            zRange: vf.zRange,
+            density: vf.density,
+            normalize: vf.normalize,
+            is2D: vf.is2D,
+          });
+
+          const fieldGroup = createVectorFieldMeshes(fieldResult, vf.normalize);
+          surfaceGroup.add(fieldGroup);
+        } catch (err) {
+          console.warn(`Failed to render vector field:`, err);
+        }
+      });
+
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
@@ -969,7 +1006,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, time, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, vectorFields, time, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">
