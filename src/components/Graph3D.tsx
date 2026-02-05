@@ -7,6 +7,8 @@ import { generateSurface, calculateZRange, CriticalPoint } from '@/lib/graphing/
 import { createEvaluator } from '@/lib/mathParser';
 import { generateClosedVolumeGeometry, SurfaceConstraint } from '@/lib/graphing/volumeGeometry';
 import { generateParametricSurface, ParametricSurfaceOptions } from '@/lib/graphing/parametricSurface';
+import { generateSpaceCurve, SpaceCurveOptions } from '@/lib/graphing/spaceCurve';
+import { generateImplicitSurface, ImplicitSurfaceOptions } from '@/lib/graphing/implicitSurface';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -30,6 +32,21 @@ export interface ParametricInput {
   vRange: [number, number];
 }
 
+export interface SpaceCurveInput {
+  xExpr: string;
+  yExpr: string;
+  zExpr: string;
+  tRange: [number, number];
+  tubeRadius?: number;
+}
+
+export interface ImplicitSurfaceInput {
+  expression: string;
+  xRange: [number, number];
+  yRange: [number, number];
+  zRange: [number, number];
+}
+
 interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
@@ -40,6 +57,8 @@ interface Graph3DProps {
   showVolumeVisualization?: boolean; // Show semi-transparent volume between first two surfaces
   volumeFillDirections?: ('above' | 'below')[]; // Fill direction for each surface
   parametricSurfaces?: ParametricInput[]; // Parametric surfaces to render
+  spaceCurves?: SpaceCurveInput[]; // Space curves r(t) = <x(t), y(t), z(t)>
+  implicitSurfaces?: ImplicitSurfaceInput[]; // Implicit surfaces F(x,y,z) = 0
   time?: number; // Time parameter for animated surfaces
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
@@ -60,6 +79,8 @@ export default function Graph3D({
   showVolumeVisualization = false,
   volumeFillDirections = ['below', 'above'],
   parametricSurfaces = [],
+  spaceCurves = [],
+  implicitSurfaces = [],
   time,
   onZRangeChange,
   onStatsChange,
@@ -525,7 +546,7 @@ export default function Graph3D({
 
     // Filter valid expressions (they should already be filtered, but double-check)
     const validExpressions = expressions.filter(e => e.expression.trim());
-    if (validExpressions.length === 0 && parametricSurfaces.length === 0) return;
+    if (validExpressions.length === 0 && parametricSurfaces.length === 0 && spaceCurves.length === 0 && implicitSurfaces.length === 0) return;
 
     try {
       setError(null);
@@ -730,6 +751,89 @@ export default function Graph3D({
         }
       });
 
+      // Render space curves
+      spaceCurves.forEach((curve, index) => {
+        try {
+          const { geometry, lineGeometry } = generateSpaceCurve({
+            xExpr: curve.xExpr,
+            yExpr: curve.yExpr,
+            zExpr: curve.zExpr,
+            tRange: curve.tRange,
+            segments: Math.max(200, resolution * 3),
+            functionIndex: validExpressions.length + parametricSurfaces.length + index,
+            tubeRadius: curve.tubeRadius ?? 1,
+          });
+
+          if (curve.tubeRadius && curve.tubeRadius > 0) {
+            // Tube rendering
+            const tubeMaterial = new THREE.MeshStandardMaterial({
+              vertexColors: true,
+              side: THREE.DoubleSide,
+              roughness: 0.3,
+              metalness: 0.15,
+            });
+            const tubeMesh = new THREE.Mesh(geometry, tubeMaterial);
+            tubeMesh.castShadow = true;
+            tubeMesh.receiveShadow = true;
+            tubeMesh.frustumCulled = false;
+            surfaceGroup.add(tubeMesh);
+          } else {
+            // Line rendering
+            const lineMaterial = new THREE.LineBasicMaterial({
+              vertexColors: true,
+              linewidth: 2,
+            });
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.frustumCulled = false;
+            surfaceGroup.add(line);
+          }
+        } catch (err) {
+          console.warn(`Failed to render space curve:`, err);
+        }
+      });
+
+      // Render implicit surfaces
+      implicitSurfaces.forEach((implicit, index) => {
+        try {
+          const { geometry } = generateImplicitSurface({
+            expression: implicit.expression,
+            xRange: implicit.xRange,
+            yRange: implicit.yRange,
+            zRange: implicit.zRange,
+            resolution: Math.min(resolution, 40), // Keep resolution manageable for marching cubes
+            functionIndex: validExpressions.length + parametricSurfaces.length + spaceCurves.length + index,
+          });
+
+          const implicitMaterial = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            roughness: 0.4,
+            metalness: 0.1,
+            transparent: false,
+            depthWrite: true,
+          });
+
+          const implicitMesh = new THREE.Mesh(geometry, implicitMaterial);
+          implicitMesh.castShadow = true;
+          implicitMesh.receiveShadow = true;
+          implicitMesh.frustumCulled = false;
+          surfaceGroup.add(implicitMesh);
+
+          if (showSurfaceGrid) {
+            const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+            const wireframeMaterial = new THREE.LineBasicMaterial({
+              color: 0x000000,
+              opacity: 0.25,
+              transparent: true,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+            surfaceGroup.add(wireframe);
+          }
+        } catch (err) {
+          console.warn(`Failed to render implicit surface:`, err);
+        }
+      });
+
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
@@ -865,7 +969,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, time, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, time, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">

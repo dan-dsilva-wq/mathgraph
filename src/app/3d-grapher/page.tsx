@@ -8,7 +8,9 @@ import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives, expressionUsesTime, parametricExpressionUsesTime } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import { validateParametricExpression } from '@/lib/mathParser';
-import { ParametricInput } from '@/components/Graph3D';
+import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput } from '@/components/Graph3D';
+import { validateCurveExpression } from '@/lib/graphing/spaceCurve';
+import { validateImplicitExpression } from '@/lib/graphing/implicitSurface';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
@@ -74,7 +76,7 @@ const HISTORY_KEY = 'mathgraph-recent-equations';
 const CURRENT_EXPR_KEY = 'mathgraph-current-expressions';
 const CURRENT_RANGES_KEY = 'mathgraph-current-ranges';
 
-type GraphMode = 'explicit' | 'parametric';
+type GraphMode = 'explicit' | 'parametric' | 'curve' | 'implicit';
 
 interface ParametricExample {
   name: string;
@@ -260,6 +262,160 @@ const ANIMATED_PARAMETRIC_EXAMPLES: AnimatedParametricExample[] = [
   },
 ];
 
+// Space curve examples
+interface CurveExample {
+  name: string;
+  description: string;
+  x: string;
+  y: string;
+  z: string;
+  tRange: [number, number];
+}
+
+const CURVE_EXAMPLES: CurveExample[] = [
+  {
+    name: 'Helix',
+    description: 'Circular helix spiraling upward',
+    x: 'cos(t)',
+    y: 'sin(t)',
+    z: 't / 3',
+    tRange: [0, 18.85],
+  },
+  {
+    name: 'Trefoil Knot',
+    description: 'A trefoil knot in 3D space',
+    x: 'sin(t) + 2sin(2t)',
+    y: 'cos(t) - 2cos(2t)',
+    z: '-sin(3t)',
+    tRange: [0, 6.28318],
+  },
+  {
+    name: 'Torus Knot',
+    description: '(3,2) torus knot',
+    x: '(2 + cos(3t)) * cos(2t)',
+    y: '(2 + cos(3t)) * sin(2t)',
+    z: 'sin(3t)',
+    tRange: [0, 6.28318],
+  },
+  {
+    name: 'Viviani Curve',
+    description: 'Intersection of sphere and cylinder',
+    x: '1 + cos(t)',
+    y: 'sin(t)',
+    z: '2sin(t/2)',
+    tRange: [0, 12.566],
+  },
+  {
+    name: 'Lissajous 3D',
+    description: 'Lissajous figure in 3D',
+    x: 'sin(2t)',
+    y: 'sin(3t)',
+    z: 'sin(5t)',
+    tRange: [0, 6.28318],
+  },
+  {
+    name: 'Conical Spiral',
+    description: 'Spiral on a cone',
+    x: 't * cos(6t)',
+    y: 't * sin(6t)',
+    z: 't',
+    tRange: [0, 6.28318],
+  },
+  {
+    name: 'Figure Eight',
+    description: 'Figure-eight curve in 3D',
+    x: 'cos(t)',
+    y: 'sin(t) * cos(t)',
+    z: 'sin(t)',
+    tRange: [0, 6.28318],
+  },
+  {
+    name: 'Spherical Spiral',
+    description: 'Spiral wrapping a sphere',
+    x: 'cos(t) * cos(t/20)',
+    y: 'sin(t) * cos(t/20)',
+    z: 'sin(t/20)',
+    tRange: [0, 62.83],
+  },
+];
+
+// Implicit surface examples
+interface ImplicitExample {
+  name: string;
+  description: string;
+  expression: string;
+  xRange: [number, number];
+  yRange: [number, number];
+  zRange: [number, number];
+}
+
+const IMPLICIT_EXAMPLES: ImplicitExample[] = [
+  {
+    name: 'Sphere',
+    description: 'Unit sphere x² + y² + z² = 1',
+    expression: 'x^2 + y^2 + z^2 - 1',
+    xRange: [-1.5, 1.5],
+    yRange: [-1.5, 1.5],
+    zRange: [-1.5, 1.5],
+  },
+  {
+    name: 'Ellipsoid',
+    description: 'Stretched sphere',
+    expression: 'x^2/4 + y^2/9 + z^2 - 1',
+    xRange: [-3, 3],
+    yRange: [-4, 4],
+    zRange: [-2, 2],
+  },
+  {
+    name: 'Torus',
+    description: 'Donut shape',
+    expression: '(sqrt(x^2 + y^2) - 2)^2 + z^2 - 0.5',
+    xRange: [-4, 4],
+    yRange: [-4, 4],
+    zRange: [-2, 2],
+  },
+  {
+    name: 'Hyperboloid',
+    description: 'One-sheet hyperboloid',
+    expression: 'x^2 + y^2 - z^2 - 1',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Cone',
+    description: 'Double cone',
+    expression: 'x^2 + y^2 - z^2',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-3, 3],
+  },
+  {
+    name: 'Gyroid',
+    description: 'Triply periodic minimal surface',
+    expression: 'sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)',
+    xRange: [-6.28, 6.28],
+    yRange: [-6.28, 6.28],
+    zRange: [-6.28, 6.28],
+  },
+  {
+    name: 'Genus 2',
+    description: 'Surface with 2 holes',
+    expression: '2y(y^2 - 3x^2)(1-z^2) + (x^2+y^2)^2 - (9z^2-1)(1-z^2)',
+    xRange: [-3, 3],
+    yRange: [-3, 3],
+    zRange: [-2, 2],
+  },
+  {
+    name: 'Cylinder',
+    description: 'Circular cylinder',
+    expression: 'x^2 + y^2 - 1',
+    xRange: [-2, 2],
+    yRange: [-2, 2],
+    zRange: [-3, 3],
+  },
+];
+
 interface HistoryEntry {
   expressions: string[];
   timestamp: number;
@@ -315,6 +471,20 @@ function Graph3DPage() {
   const [paramURange, setParamURange] = useState<[number, number]>([0, Math.PI]);
   const [paramVRange, setParamVRange] = useState<[number, number]>([0, 2 * Math.PI]);
   const [activeParametricSurfaces, setActiveParametricSurfaces] = useState<ParametricInput[]>([]);
+
+  // Space curve mode state
+  const [curveXExpr, setCurveXExpr] = useState('cos(t)');
+  const [curveYExpr, setCurveYExpr] = useState('sin(t)');
+  const [curveZExpr, setCurveZExpr] = useState('t / 3');
+  const [curveTRange, setCurveTRange] = useState<[number, number]>([0, 6 * Math.PI]);
+  const [activeCurves, setActiveCurves] = useState<SpaceCurveInput[]>([]);
+
+  // Implicit surface mode state
+  const [implicitExpr, setImplicitExpr] = useState('x^2 + y^2 + z^2 - 1');
+  const [implicitXRange, setImplicitXRange] = useState<[number, number]>([-2, 2]);
+  const [implicitYRange, setImplicitYRange] = useState<[number, number]>([-2, 2]);
+  const [implicitZRange, setImplicitZRange] = useState<[number, number]>([-2, 2]);
+  const [activeImplicits, setActiveImplicits] = useState<ImplicitSurfaceInput[]>([]);
 
   // Animation state
   const [animationTime, setAnimationTime] = useState(0);
@@ -675,6 +845,89 @@ function Graph3DPage() {
     };
   }, [graphMode, paramXExpr, paramYExpr, paramZExpr, paramURange, paramVRange]);
 
+  // Auto-update space curve when expressions change (debounced)
+  const curveDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (graphMode !== 'curve') {
+      setActiveCurves([]);
+      return;
+    }
+
+    if (curveDebounceRef.current) {
+      clearTimeout(curveDebounceRef.current);
+    }
+
+    curveDebounceRef.current = setTimeout(() => {
+      const xValid = curveXExpr.trim() && validateCurveExpression(curveXExpr).valid;
+      const yValid = curveYExpr.trim() && validateCurveExpression(curveYExpr).valid;
+      const zValid = curveZExpr.trim() && validateCurveExpression(curveZExpr).valid;
+
+      if (xValid && yValid && zValid) {
+        setActiveCurves([{
+          xExpr: curveXExpr,
+          yExpr: curveYExpr,
+          zExpr: curveZExpr,
+          tRange: curveTRange,
+          tubeRadius: 1,
+        }]);
+      } else {
+        setActiveCurves([]);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (curveDebounceRef.current) {
+        clearTimeout(curveDebounceRef.current);
+      }
+    };
+  }, [graphMode, curveXExpr, curveYExpr, curveZExpr, curveTRange]);
+
+  // Auto-update implicit surface when expression changes (debounced)
+  const implicitDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (graphMode !== 'implicit') {
+      setActiveImplicits([]);
+      return;
+    }
+
+    if (implicitDebounceRef.current) {
+      clearTimeout(implicitDebounceRef.current);
+    }
+
+    implicitDebounceRef.current = setTimeout(() => {
+      if (implicitExpr.trim() && validateImplicitExpression(implicitExpr).valid) {
+        setActiveImplicits([{
+          expression: implicitExpr,
+          xRange: implicitXRange,
+          yRange: implicitYRange,
+          zRange: implicitZRange,
+        }]);
+      } else {
+        setActiveImplicits([]);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (implicitDebounceRef.current) {
+        clearTimeout(implicitDebounceRef.current);
+      }
+    };
+  }, [graphMode, implicitExpr, implicitXRange, implicitYRange, implicitZRange]);
+
+  const loadCurveExample = (example: CurveExample) => {
+    setCurveXExpr(example.x);
+    setCurveYExpr(example.y);
+    setCurveZExpr(example.z);
+    setCurveTRange(example.tRange);
+  };
+
+  const loadImplicitExample = (example: ImplicitExample) => {
+    setImplicitExpr(example.expression);
+    setImplicitXRange(example.xRange);
+    setImplicitYRange(example.yRange);
+    setImplicitZRange(example.zRange);
+  };
+
   const loadParametricExample = (example: ParametricExample) => {
     setParamXExpr(example.x);
     setParamYExpr(example.y);
@@ -808,23 +1061,43 @@ function Graph3DPage() {
             <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
               <button
                 onClick={() => setGraphMode('explicit')}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
                   graphMode === 'explicit'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
-                z = f(x,y)
+                z=f(x,y)
               </button>
               <button
                 onClick={() => setGraphMode('parametric')}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
                   graphMode === 'parametric'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
                 Parametric
+              </button>
+              <button
+                onClick={() => setGraphMode('curve')}
+                className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                  graphMode === 'curve'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Curve
+              </button>
+              <button
+                onClick={() => setGraphMode('implicit')}
+                className={`flex-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                  graphMode === 'implicit'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                Implicit
               </button>
             </div>
           </div>
@@ -1080,6 +1353,226 @@ function Graph3DPage() {
                       setAnimationTime(0);
                     }}
                     className="px-2.5 py-1 text-xs bg-blue-900/40 hover:bg-blue-800/50 text-blue-300 rounded-md transition-colors border border-blue-700/40 hover:border-blue-600/50"
+                    title={example.description}
+                  >
+                    {example.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Space Curve mode */}
+          {graphMode === 'curve' && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+              Space Curve r(t) = &lt;x(t), y(t), z(t)&gt;
+            </h3>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-red-400 text-xs font-mono w-10 text-right flex-shrink-0">x(t) =</span>
+                <input
+                  type="text"
+                  value={curveXExpr}
+                  onChange={(e) => setCurveXExpr(e.target.value)}
+                  placeholder="cos(t)"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    curveXExpr.trim() && !validateCurveExpression(curveXExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-blue-400 text-xs font-mono w-10 text-right flex-shrink-0">y(t) =</span>
+                <input
+                  type="text"
+                  value={curveYExpr}
+                  onChange={(e) => setCurveYExpr(e.target.value)}
+                  placeholder="sin(t)"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    curveYExpr.trim() && !validateCurveExpression(curveYExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 text-xs font-mono w-10 text-right flex-shrink-0">z(t) =</span>
+                <input
+                  type="text"
+                  value={curveZExpr}
+                  onChange={(e) => setCurveZExpr(e.target.value)}
+                  placeholder="t / 3"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    curveZExpr.trim() && !validateCurveExpression(curveZExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* t range */}
+            <div className="mt-4 space-y-2">
+              <h4 className="text-xs text-slate-500">Parameter Range</h4>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-mono w-6 text-right flex-shrink-0">t:</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={curveTRange[0].toFixed(curveTRange[0] === Math.round(curveTRange[0]) ? 0 : 5)}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) setCurveTRange([v, curveTRange[1]]);
+                  }}
+                  className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-xs">to</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={curveTRange[1].toFixed(curveTRange[1] === Math.round(curveTRange[1]) ? 0 : 5)}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) setCurveTRange([curveTRange[0], v]);
+                  }}
+                  className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                <button
+                  onClick={() => setCurveTRange([0, 2 * Math.PI])}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0, 2π]
+                </button>
+                <button
+                  onClick={() => setCurveTRange([0, 4 * Math.PI])}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0, 4π]
+                </button>
+                <button
+                  onClick={() => setCurveTRange([0, 6 * Math.PI])}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0, 6π]
+                </button>
+                <button
+                  onClick={() => setCurveTRange([-Math.PI, Math.PI])}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [-π, π]
+                </button>
+                <button
+                  onClick={() => setCurveTRange([0, 10])}
+                  className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-400 rounded"
+                >
+                  [0, 10]
+                </button>
+              </div>
+            </div>
+
+            {/* Curve Examples */}
+            <div className="mt-4">
+              <h4 className="text-xs text-slate-500 mb-2">Examples</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {CURVE_EXAMPLES.map((example) => (
+                  <button
+                    key={example.name}
+                    onClick={() => loadCurveExample(example)}
+                    className="px-2.5 py-1 text-xs bg-emerald-900/40 hover:bg-emerald-800/50 text-emerald-300 rounded-md transition-colors border border-emerald-700/40 hover:border-emerald-600/50"
+                    title={example.description}
+                  >
+                    {example.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Implicit Surface mode */}
+          {graphMode === 'implicit' && (
+          <div className="p-4 border-b border-slate-800">
+            <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+              Implicit Surface F(x,y,z) = 0
+            </h3>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-purple-400 text-xs font-mono flex-shrink-0">F =</span>
+                <input
+                  type="text"
+                  value={implicitExpr}
+                  onChange={(e) => setImplicitExpr(e.target.value)}
+                  placeholder="x^2 + y^2 + z^2 - 1"
+                  className={`flex-1 px-2 py-1.5 bg-slate-800 border rounded text-white font-mono text-sm placeholder-slate-600 ${
+                    implicitExpr.trim() && !validateImplicitExpression(implicitExpr).valid ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Surface is rendered where F(x,y,z) = 0
+              </div>
+            </div>
+
+            {/* Ranges */}
+            <div className="mt-4 space-y-2">
+              <h4 className="text-xs text-slate-500">Bounds</h4>
+              {/* x range */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-red-400 font-mono w-4 text-right flex-shrink-0">x:</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitXRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitXRange([v, implicitXRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitXRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitXRange([implicitXRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              {/* y range */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-blue-400 font-mono w-4 text-right flex-shrink-0">y:</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitYRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitYRange([v, implicitYRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitYRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitYRange([implicitYRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+              {/* z range */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-400 font-mono w-4 text-right flex-shrink-0">z:</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitZRange[0]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitZRange([v, implicitZRange[1]]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+                <span className="text-slate-500 text-[10px]">to</span>
+                <input type="text" inputMode="numeric"
+                  value={implicitZRange[1]}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setImplicitZRange([implicitZRange[0], v]); }}
+                  className="w-14 px-1.5 py-1 bg-slate-800 border border-slate-700 rounded text-sm text-white font-mono text-center"
+                />
+              </div>
+            </div>
+
+            {/* Implicit Examples */}
+            <div className="mt-4">
+              <h4 className="text-xs text-slate-500 mb-2">Examples</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {IMPLICIT_EXAMPLES.map((example) => (
+                  <button
+                    key={example.name}
+                    onClick={() => loadImplicitExample(example)}
+                    className="px-2.5 py-1 text-xs bg-purple-900/40 hover:bg-purple-800/50 text-purple-300 rounded-md transition-colors border border-purple-700/40 hover:border-purple-600/50"
                     title={example.description}
                   >
                     {example.name}
@@ -1648,6 +2141,8 @@ function Graph3DPage() {
               showVolumeVisualization={graphMode === 'explicit' && volumeMode}
               volumeFillDirections={volumeFillDirections}
               parametricSurfaces={graphMode === 'parametric' ? activeParametricSurfaces : []}
+              spaceCurves={graphMode === 'curve' ? activeCurves : []}
+              implicitSurfaces={graphMode === 'implicit' ? activeImplicits : []}
               time={usesTime ? animationTime : undefined}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}
