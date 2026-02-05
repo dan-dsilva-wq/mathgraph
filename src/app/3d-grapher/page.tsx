@@ -8,7 +8,7 @@ import { getFunctionColor } from '@/lib/graphing/colors';
 import { validateExpression, generateIntersectionEquation, createEvaluator, getPartialDerivatives, expressionUsesTime, parametricExpressionUsesTime } from '@/lib/mathParser';
 import { IntegrationResult, calculateVolumeWithFillDirections, FillDirection, SurfaceConstraint } from '@/lib/integration';
 import { validateParametricExpression } from '@/lib/mathParser';
-import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInput } from '@/components/Graph3D';
+import { ParametricInput, SpaceCurveInput, ImplicitSurfaceInput, VectorFieldInput, CrossSectionInput, LevelCurvesInput } from '@/components/Graph3D';
 import { validateCurveExpression } from '@/lib/graphing/spaceCurve';
 import { validateImplicitExpression } from '@/lib/graphing/implicitSurface';
 import { validateVectorFieldExpression } from '@/lib/graphing/vectorField';
@@ -595,6 +595,17 @@ function Graph3DPage() {
   const [vfNormalize, setVfNormalize] = useState(false);
   const [vfIs2D, setVfIs2D] = useState(false);
   const [activeVectorFields, setActiveVectorFields] = useState<VectorFieldInput[]>([]);
+
+  // Cross-section state
+  const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
+  const [crossSectionPlane, setCrossSectionPlane] = useState<'x' | 'y' | 'z'>('x');
+  const [crossSectionValue, setCrossSectionValue] = useState(0);
+  const [crossSectionShowPlane, setCrossSectionShowPlane] = useState(true);
+
+  // Level curves state
+  const [levelCurvesEnabled, setLevelCurvesEnabled] = useState(false);
+  const [levelCurvesCount, setLevelCurvesCount] = useState(8);
+  const [levelCurvesShowProjected, setLevelCurvesShowProjected] = useState(false);
 
   // Animation state
   const [animationTime, setAnimationTime] = useState(0);
@@ -2374,15 +2385,131 @@ function Graph3DPage() {
           {/* Display Options */}
           <div className="p-4 border-b border-slate-800">
             <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">Display Options</h3>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showSurfaceGrid}
-                onChange={(e) => setShowSurfaceGrid(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
-              />
-              <span className="text-sm text-slate-300">Show surface grid lines</span>
-            </label>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showSurfaceGrid}
+                  onChange={(e) => setShowSurfaceGrid(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                />
+                <span className="text-sm text-slate-300">Show surface grid lines</span>
+              </label>
+
+              {/* Level Curves */}
+              {graphMode === 'explicit' && activeExpressions.length > 0 && (
+              <>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={levelCurvesEnabled}
+                    onChange={(e) => setLevelCurvesEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-slate-300">Contour lines</span>
+                </label>
+
+                {levelCurvesEnabled && (
+                  <div className="pl-6 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 w-14 flex-shrink-0">Levels:</span>
+                      <input
+                        type="range"
+                        min="3"
+                        max="20"
+                        value={levelCurvesCount}
+                        onChange={(e) => setLevelCurvesCount(parseInt(e.target.value))}
+                        className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                      <span className="text-xs text-slate-400 font-mono w-6 text-right">{levelCurvesCount}</span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={levelCurvesShowProjected}
+                        onChange={(e) => setLevelCurvesShowProjected(e.target.checked)}
+                        className="w-3 h-3 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                      />
+                      <span className="text-xs text-slate-400">Project onto grid plane</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Cross-Section */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={crossSectionEnabled}
+                    onChange={(e) => setCrossSectionEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-slate-300">Cross-section plane</span>
+                </label>
+
+                {crossSectionEnabled && (
+                  <div className="pl-6 space-y-2">
+                    {/* Plane selector */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-400 w-14 flex-shrink-0">Slice:</span>
+                      <div className="flex gap-1">
+                        {(['x', 'y', 'z'] as const).map((axis) => (
+                          <button
+                            key={axis}
+                            onClick={() => {
+                              setCrossSectionPlane(axis);
+                              setCrossSectionValue(0);
+                            }}
+                            className={`px-2 py-0.5 rounded text-xs font-mono transition-colors ${
+                              crossSectionPlane === axis
+                                ? axis === 'x' ? 'bg-red-600 text-white'
+                                  : axis === 'y' ? 'bg-blue-600 text-white'
+                                  : 'bg-green-600 text-white'
+                                : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                            }`}
+                          >
+                            {axis} = c
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Value slider */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 font-mono w-14 flex-shrink-0">
+                        {crossSectionPlane} =
+                      </span>
+                      <input
+                        type="range"
+                        min={crossSectionPlane === 'x' ? xRange[0] : crossSectionPlane === 'y' ? yRange[0] : zRange[0]}
+                        max={crossSectionPlane === 'x' ? xRange[1] : crossSectionPlane === 'y' ? yRange[1] : zRange[1]}
+                        step={0.1}
+                        value={crossSectionValue}
+                        onChange={(e) => setCrossSectionValue(parseFloat(e.target.value))}
+                        className={`flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer ${
+                          crossSectionPlane === 'x' ? 'accent-red-500'
+                            : crossSectionPlane === 'y' ? 'accent-blue-500'
+                            : 'accent-green-500'
+                        }`}
+                      />
+                      <span className="text-xs text-slate-300 font-mono w-10 text-right">
+                        {crossSectionValue.toFixed(1)}
+                      </span>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={crossSectionShowPlane}
+                        onChange={(e) => setCrossSectionShowPlane(e.target.checked)}
+                        className="w-3 h-3 rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
+                      />
+                      <span className="text-xs text-slate-400">Show cutting plane</span>
+                    </label>
+                  </div>
+                )}
+              </>
+              )}
+            </div>
           </div>
 
           {/* Share */}
@@ -2480,6 +2607,16 @@ function Graph3DPage() {
               spaceCurves={graphMode === 'curve' ? activeCurves : []}
               implicitSurfaces={graphMode === 'implicit' ? activeImplicits : []}
               vectorFields={graphMode === 'vector' ? activeVectorFields : []}
+              crossSection={graphMode === 'explicit' && crossSectionEnabled ? {
+                plane: crossSectionPlane,
+                planeValue: crossSectionValue,
+                showPlane: crossSectionShowPlane,
+              } : undefined}
+              levelCurves={graphMode === 'explicit' && levelCurvesEnabled ? {
+                enabled: true,
+                numLevels: levelCurvesCount,
+                showProjected: levelCurvesShowProjected,
+              } : undefined}
               time={usesTime ? animationTime : undefined}
               onZRangeChange={handleZRangeChange}
               onStatsChange={handleStatsChange}

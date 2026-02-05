@@ -10,6 +10,7 @@ import { generateParametricSurface, ParametricSurfaceOptions } from '@/lib/graph
 import { generateSpaceCurve, SpaceCurveOptions } from '@/lib/graphing/spaceCurve';
 import { generateImplicitSurface, ImplicitSurfaceOptions } from '@/lib/graphing/implicitSurface';
 import { generateVectorField, createVectorFieldMeshes, VectorFieldOptions } from '@/lib/graphing/vectorField';
+import { generateCrossSection, generateLevelCurves, SlicePlane, CrossSectionOptions, LevelCurvesOptions } from '@/lib/graphing/crossSection';
 import { IntegrationResult } from '@/lib/integration';
 
 interface ExpressionWithIndex {
@@ -60,6 +61,18 @@ export interface VectorFieldInput {
   is2D: boolean;
 }
 
+export interface CrossSectionInput {
+  plane: SlicePlane;
+  planeValue: number;
+  showPlane: boolean;
+}
+
+export interface LevelCurvesInput {
+  enabled: boolean;
+  numLevels: number;
+  showProjected: boolean;  // Show contours projected onto grid plane
+}
+
 interface Graph3DProps {
   expressions: ExpressionWithIndex[];
   xRange: [number, number];
@@ -73,6 +86,8 @@ interface Graph3DProps {
   spaceCurves?: SpaceCurveInput[]; // Space curves r(t) = <x(t), y(t), z(t)>
   implicitSurfaces?: ImplicitSurfaceInput[]; // Implicit surfaces F(x,y,z) = 0
   vectorFields?: VectorFieldInput[]; // Vector fields F(x,y,z) = <P,Q,R>
+  crossSection?: CrossSectionInput;  // Cross-section cutting plane
+  levelCurves?: LevelCurvesInput;    // Level curves (contour lines)
   time?: number; // Time parameter for animated surfaces
   onZRangeChange?: (zMin: number, zMax: number) => void;
   onStatsChange?: (stats: {
@@ -96,6 +111,8 @@ export default function Graph3D({
   spaceCurves = [],
   implicitSurfaces = [],
   vectorFields = [],
+  crossSection,
+  levelCurves,
   time,
   onZRangeChange,
   onStatsChange,
@@ -116,6 +133,7 @@ export default function Graph3D({
   const [zeroPlaneY, setZeroPlaneY] = useState<number>(0);
   const criticalPointsGroupRef = useRef<THREE.Group | null>(null);
   const volumeVisualizationRef = useRef<THREE.Group | null>(null);
+  const crossSectionGroupRef = useRef<THREE.Group | null>(null);
   // Store transform for converting hover coords back to math coords
   const transformRef = useRef<{
     xScale: number;
@@ -871,6 +889,151 @@ export default function Graph3D({
         }
       });
 
+      // Render cross-section and level curves for explicit mode surfaces
+      if (crossSectionGroupRef.current) {
+        sceneRef.current.remove(crossSectionGroupRef.current);
+        crossSectionGroupRef.current.traverse((obj) => {
+          if (obj instanceof THREE.Line || obj instanceof THREE.LineSegments || obj instanceof THREE.Mesh) {
+            (obj as THREE.Mesh).geometry.dispose();
+            if ((obj as THREE.Mesh).material instanceof THREE.Material) {
+              ((obj as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
+        });
+        crossSectionGroupRef.current = null;
+      }
+
+      const csGroup = new THREE.Group();
+
+      if (validExpressions.length > 0) {
+        const firstExpr = validExpressions[0].expression;
+        const effectiveZRange: [number, number] = [globalZMin, globalZMax];
+
+        // Cross-section plane
+        if (crossSection && crossSection.plane) {
+          try {
+            const csResult = generateCrossSection({
+              expression: firstExpr,
+              plane: crossSection.plane,
+              planeValue: crossSection.planeValue,
+              xRange,
+              yRange,
+              zRange: effectiveZRange,
+              functionIndex: 0,
+              time,
+            });
+
+            // Render the cross-section curve
+            if (csResult.curveGeometry.attributes.position) {
+              if (crossSection.plane === 'z') {
+                // z-contour: render as LineSegments (pairs of points)
+                const lineMaterial = new THREE.LineBasicMaterial({
+                  vertexColors: true,
+                  linewidth: 2,
+                  depthTest: true,
+                });
+                const line = new THREE.LineSegments(csResult.curveGeometry, lineMaterial);
+                line.frustumCulled = false;
+                line.renderOrder = 5;
+                csGroup.add(line);
+              } else {
+                // x or y slice: render as continuous Line
+                const lineMaterial = new THREE.LineBasicMaterial({
+                  color: crossSection.plane === 'x' ? 0xff4444 : 0x4444ff,
+                  linewidth: 3,
+                  depthTest: true,
+                });
+                const line = new THREE.Line(csResult.curveGeometry, lineMaterial);
+                line.frustumCulled = false;
+                line.renderOrder = 5;
+                csGroup.add(line);
+              }
+            }
+
+            // Render the cutting plane (semi-transparent)
+            if (crossSection.showPlane) {
+              const planeColor = crossSection.plane === 'x' ? 0xff4444
+                : crossSection.plane === 'y' ? 0x4444ff
+                : 0x44ff44;
+              const planeMaterial = new THREE.MeshBasicMaterial({
+                color: planeColor,
+                transparent: true,
+                opacity: 0.12,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+              });
+              const planeMesh = new THREE.Mesh(csResult.planeGeometry, planeMaterial);
+              planeMesh.renderOrder = -1;
+              csGroup.add(planeMesh);
+
+              // Add plane border
+              const edges = new THREE.EdgesGeometry(csResult.planeGeometry);
+              const edgeMaterial = new THREE.LineBasicMaterial({
+                color: planeColor,
+                opacity: 0.4,
+                transparent: true,
+              });
+              const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
+              csGroup.add(edgeLines);
+            }
+          } catch (err) {
+            console.warn('Failed to generate cross section:', err);
+          }
+        }
+
+        // Level curves (contour lines)
+        if (levelCurves && levelCurves.enabled) {
+          try {
+            const lcResult = generateLevelCurves({
+              expression: firstExpr,
+              xRange,
+              yRange,
+              zRange: effectiveZRange,
+              numLevels: levelCurves.numLevels,
+              functionIndex: 0,
+              time,
+            });
+
+            // On-surface contour lines
+            if (lcResult.geometry.attributes.position) {
+              const contourMaterial = new THREE.LineBasicMaterial({
+                vertexColors: true,
+                linewidth: 1,
+                depthTest: true,
+                transparent: true,
+                opacity: 0.9,
+              });
+              const contourLines = new THREE.LineSegments(lcResult.geometry, contourMaterial);
+              contourLines.frustumCulled = false;
+              contourLines.renderOrder = 4;
+              csGroup.add(contourLines);
+            }
+
+            // Projected contour lines on the grid plane
+            if (levelCurves.showProjected && lcResult.projectedGeometry.attributes.position) {
+              const projectedMaterial = new THREE.LineBasicMaterial({
+                vertexColors: true,
+                linewidth: 1,
+                depthTest: true,
+                transparent: true,
+                opacity: 0.5,
+              });
+              const projectedLines = new THREE.LineSegments(lcResult.projectedGeometry, projectedMaterial);
+              projectedLines.frustumCulled = false;
+              projectedLines.renderOrder = 3;
+              csGroup.add(projectedLines);
+            }
+          } catch (err) {
+            console.warn('Failed to generate level curves:', err);
+          }
+        }
+      }
+
+      if (csGroup.children.length > 0) {
+        sceneRef.current.add(csGroup);
+        crossSectionGroupRef.current = csGroup;
+      }
+
       sceneRef.current.add(surfaceGroup);
       surfaceGroupRef.current = surfaceGroup;
 
@@ -1006,7 +1169,7 @@ export default function Graph3D({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate surface');
     }
-  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, vectorFields, time, onZRangeChange, onStatsChange]);
+  }, [expressions, xRange, yRange, zRange, resolution, showSurfaceGrid, showVolumeVisualization, volumeFillDirections, parametricSurfaces, spaceCurves, implicitSurfaces, vectorFields, crossSection, levelCurves, time, onZRangeChange, onStatsChange]);
 
   return (
     <div className="relative w-full h-full">
